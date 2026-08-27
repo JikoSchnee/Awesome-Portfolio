@@ -87,13 +87,12 @@ a-waves path{fill:none;stroke:var(--ink);stroke-width:1px;vector-effect:non-scal
 .work-card footer{height:25px;display:flex;justify-content:space-between;align-items:center;padding:0 6px;background:var(--ink);font:700 7px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase}
 .work-card[aria-hidden="true"]{pointer-events:none}
 
-.my-way{height:130vh;min-height:850px;position:relative;overflow:hidden;background:var(--paper);transition:background-color .5s ease;perspective:1100px;border-top:var(--line) solid var(--ink)}
-.my-way-lines{position:absolute;inset:0;background:repeating-conic-gradient(from 90deg at 50% 35%,transparent 0 3deg,var(--ink) 3deg 3.08deg);opacity:.58}
-.my-way-smiley{position:absolute;width:10vw;min-width:88px;max-width:150px;left:50%;top:35%;transform:translate(-50%,-50%);z-index:4}
-.memory-field{position:absolute;inset:0;transform-style:preserve-3d}
-.memory{position:absolute;left:50%;top:35%;width:clamp(110px,14vw,220px);margin:0;border:5px solid var(--ink);background:var(--ink);color:var(--paper);box-shadow:10px 10px 0 var(--paper),12px 12px 0 var(--ink);will-change:transform;transform-style:preserve-3d}
-.memory img{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;filter:grayscale(1) contrast(1.08)}
-.memory figcaption{padding:6px 8px;font:400 7px/1.25 var(--mono);text-transform:uppercase}
+.my-way{--vanishing-y:35%;height:130vh;min-height:850px;position:relative;overflow:hidden;background:var(--paper);transition:background-color .5s ease;perspective:1100px;border-top:var(--line) solid var(--ink);isolation:isolate}
+.my-way-lines{position:absolute;inset:0;z-index:0;background:repeating-conic-gradient(from 90deg at 50% var(--vanishing-y),transparent 0 3deg,var(--ink) 3deg 3.08deg);opacity:.58}
+.my-way-smiley{position:absolute;width:10vw;min-width:88px;max-width:150px;left:50%;top:var(--vanishing-y);z-index:8;transform:translate(-50%,-50%);transform-origin:center;animation:my-way-smiley-spin 7.5s linear infinite;will-change:transform;pointer-events:none}
+.memory-field{position:absolute;inset:0;z-index:10;pointer-events:none}
+.memory-canvas{display:block;width:100%;height:100%;pointer-events:none}
+@keyframes my-way-smiley-spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
 
 .contact{height:159vh;min-height:1100px;position:relative;overflow:hidden;background:var(--paper);transition:background-color .5s ease;border-top:var(--line) solid var(--ink)}
 .contact-grid{position:absolute;inset:0;width:100%;height:100%}
@@ -128,9 +127,9 @@ a-waves path{fill:none;stroke:var(--ink);stroke-width:1px;vector-effect:non-scal
   .data-strip{padding:0 12px;gap:8px}.data-strip span{min-width:72px}
   .work-stage{--work-capsule-height:70vh;--work-capsule-radius:999px;--work-capsule-inset:8px}
   .work-card{width:74vw;border-width:4px}.work-card footer{font-size:5px;height:20px}
-  .my-way{height:79vh;min-height:666px}.my-way-smiley{top:44%}.memory{top:44%;width:115px;border-width:3px}
+  .my-way{--vanishing-y:44%;height:79vh;min-height:666px}
   .contact{height:133vh;min-height:1120px}.contact-stage{height:72%}.contact-hit{width:94vw;height:120vw}.go{width:46%;height:65%;font-size:32vw}.lets,.rock{font-size:35vw}.email{font-size:9px}.contact-stars{font-size:28px}
   .site-foot{height:63px}.footer-brand svg{width:30px;height:30px}
 }
 
-@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.main-nav a::before,.contrast span,.work-card,.memory,.work-capsule,.work-title,.work-zoom-scene,.work-spread,.contact-hit *{transition:none!important;animation:none!important}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.main-nav a::before,.contrast span,.work-card,.memory,.work-capsule,.work-title,.work-zoom-scene,.work-spread,.contact-hit *,.my-way-smiley{transition:none!important;animation:none!important}}

@@ -26,6 +26,12 @@
   const workCollapseScreens = workExpansionScreens;
   const workTimelineState = { expansion: 0, hold: 0, media: 0, cardTail: 0, collapse: 0, total: 0 };
   const paperPalette = ['#e1cab8', '#f40c3f', '#fff2ed'];
+  const memorySpawnSequence = ['photo', 'photo', 'photo', 'photo', 'star', 'photo', 'photo', 'photo', 'star'];
+  const memoryDirections = [-2.64, -2.05, -1.38, -.72, -.16, .48, 1.05, 1.69, 2.27, 2.84];
+  const memorySpawnInterval = 1600;
+  const memoryLifetimeMin = 5600;
+  const memoryLifetimeMax = 7200;
+  const memoryScene = { section: null, host: null, smiley: null, slots: [], smileyVisible: false, nextSpawnAt: 0, sequenceIndex: 0, photoIndex: 0, serial: 0, frame: 0, renderer: null, scene: null, camera: null, canvas: null, textures: new Map(), worldPerPixel: 1, spawnOrigin: { x: 0, y: 0 }, size: { width: 0, height: 0 } };
   let paperThemeIndex = 0;
 
   class Noise {
@@ -169,6 +175,16 @@
     ['portfolio-2021.D5EtPDWp_Z1AfsSn.webp', '2021 portfolio'],
     ['legos.Bdikeciy_Z1pUyVv.webp', 'Legos ♥']
   ];
+  const memoryAspectRatios = new Map([
+    ['art-1987.DuGYX_YQ_Zedl3o.webp', 1], ['art-dtyw.BwdKK6hB_Z19TwfB.webp', .742],
+    ['art-lines.BXTmZZe3_Z1DHEgE.webp', .783], ['first-fwa.LsgJSoFn_1VhWNL.webp', .75],
+    ['gameboy.BbEYkrsC_RRGJe.webp', 1], ['remote-2005.B2CSTJrO_1R04cN.webp', .75],
+    ['roar.BvXyAVaL_1PKGBj.webp', .563], ['setup-2006.Op2RjVqP_ZjqlNh.webp', 1.333],
+    ['setup-2016.DZszJSwz_10aiku.webp', 1.778], ['setup-2020.DjuS52Ke_1lqvvK.webp', 1.778],
+    ['waaark.C5QpwSMH_Rq3S9.webp', 1], ['portfolio-2011.DpFoQfUQ_ZXEwJ9.webp', 1.333],
+    ['portfolio-2014.ClRt5L9z_Xz3cl.webp', 1.335], ['portfolio-2017.N-r3CKDK_iyXU7.webp', 1.333],
+    ['portfolio-2021.D5EtPDWp_Z1AfsSn.webp', 1.333], ['legos.Bdikeciy_Z1pUyVv.webp', .75]
+  ]);
 
   function seeded(index) {
     const x = Math.sin(index * 9283.13 + 77.7) * 43758.5453;
@@ -372,11 +388,275 @@
 
   function buildMemories() {
     const host = $('#memory-field');
-    memories.forEach(([file, caption], index) => {
-      const item = document.createElement('figure'); item.className = 'memory'; item.dataset.index = index;
-      item.innerHTML = `<img src="./assets/wodniack/images/${file}" alt="${caption.replaceAll('"', '&quot;')}" loading="lazy" decoding="async"><figcaption>${caption}</figcaption>`;
-      host.append(item);
+    const section = $('.my-way');
+    const smiley = $('.my-way-smiley');
+    if (!host || !section || !smiley) return;
+    memoryScene.host = host;
+    memoryScene.section = section;
+    memoryScene.smiley = smiley;
+    host.replaceChildren();
+    if (reducedMotion || !window.THREE) return;
+    const T = window.THREE;
+    const canvas = document.createElement('canvas');
+    canvas.className = 'memory-canvas';
+    canvas.setAttribute('aria-hidden', 'true');
+    host.append(canvas);
+    try {
+      memoryScene.renderer = new T.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
+    } catch {
+      host.replaceChildren();
+      return;
+    }
+    memoryScene.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    memoryScene.renderer.outputColorSpace = T.SRGBColorSpace;
+    memoryScene.renderer.setClearColor(0x000000, 0);
+    memoryScene.canvas = canvas;
+    memoryScene.scene = new T.Scene();
+    memoryScene.camera = new T.PerspectiveCamera(38, 1, 1, 2600);
+    memoryScene.camera.position.z = 900;
+    memoryScene.scene.add(new T.HemisphereLight(0xfff2ed, 0x160000, 2.25));
+    const keyLight = new T.DirectionalLight(0xffffff, 2.4);
+    keyLight.position.set(-300, 420, 720);
+    memoryScene.scene.add(keyLight);
+    const rimLight = new T.PointLight(0xf40c3f, 22, 1500);
+    rimLight.position.set(280, -120, 420);
+    memoryScene.scene.add(rimLight);
+    preloadMemoryTextures();
+    memoryScene.slots = Array.from({ length: 5 }, () => {
+      return { startedAt: 0, flight: null, kind: null, file: null, model: null };
     });
+    resizeMemoryScene();
+    const setSmileyVisibility = visible => {
+      memoryScene.smileyVisible = visible;
+      if (visible && !memoryScene.nextSpawnAt) memoryScene.nextSpawnAt = performance.now() + 120;
+      if (visible || memoryScene.slots.some(slot => slot.startedAt)) requestMemoryFrame();
+    };
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver(entries => {
+        const entry = entries[0];
+        setSmileyVisibility(Boolean(entry?.isIntersecting));
+      }, { threshold: .12 });
+      observer.observe(smiley);
+    } else {
+      setSmileyVisibility(true);
+    }
+  }
+
+  function resizeMemoryScene() {
+    const { section, renderer, camera } = memoryScene;
+    if (!section || !renderer || !camera) return;
+    const width = Math.max(section.clientWidth, 1);
+    const height = Math.max(section.clientHeight, 1);
+    memoryScene.size.width = width;
+    memoryScene.size.height = height;
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    memoryScene.worldPerPixel = 2 * camera.position.z * Math.tan(camera.fov * Math.PI / 360) / height;
+    const canvasRect = memoryScene.canvas.getBoundingClientRect();
+    const smileyRect = memoryScene.smiley.getBoundingClientRect();
+    const smileyCenterX = smileyRect.left + smileyRect.width / 2 - canvasRect.left;
+    const smileyCenterY = smileyRect.top + smileyRect.height / 2 - canvasRect.top;
+    memoryScene.spawnOrigin.x = (smileyCenterX - width / 2) * memoryScene.worldPerPixel;
+    memoryScene.spawnOrigin.y = (height / 2 - smileyCenterY) * memoryScene.worldPerPixel;
+    renderer.render(memoryScene.scene, camera);
+  }
+
+  function preloadMemoryTextures() {
+    const T = window.THREE;
+    const loader = new T.TextureLoader();
+    memories.forEach(([file]) => {
+      loader.load(`./assets/wodniack/images/${file}`, texture => {
+        texture.colorSpace = T.SRGBColorSpace;
+        texture.anisotropy = Math.min(4, memoryScene.renderer?.capabilities.getMaxAnisotropy() || 1);
+        memoryScene.textures.set(file, texture);
+        memoryScene.slots.forEach(slot => {
+          if (slot.file !== file || !slot.model?.userData.photoMaterial) return;
+          slot.model.userData.photoMaterial.map = texture;
+          slot.model.userData.photoMaterial.needsUpdate = true;
+        });
+      });
+    });
+  }
+
+  function getMemoryColors() {
+    const style = getComputedStyle(memoryScene.section);
+    return { paper: style.getPropertyValue('--paper').trim() || '#e1cab8', ink: style.getPropertyValue('--ink').trim() || '#160000' };
+  }
+
+  function makeCaptionMesh(caption, width, pixelScale, ink, paper, offsetY, cardThickness) {
+    const T = window.THREE;
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 84;
+    const context = canvas.getContext('2d');
+    context.fillStyle = ink;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = paper;
+    context.font = '700 22px monospace';
+    context.textBaseline = 'middle';
+    const label = caption.toUpperCase();
+    context.fillText(label.slice(0, 52), 20, canvas.height / 2 + 1);
+    const texture = new T.CanvasTexture(canvas);
+    texture.colorSpace = T.SRGBColorSpace;
+    texture.userData.memoryCaption = true;
+    const captionHeight = 28 * pixelScale;
+    const captionThickness = cardThickness;
+    const edge = new T.MeshStandardMaterial({ color: ink, roughness: .48, metalness: .08 });
+    const front = new T.MeshBasicMaterial({ map: texture });
+    const mesh = new T.Mesh(
+      new T.BoxGeometry(width, captionHeight, captionThickness),
+      [edge, edge, edge, edge, front, edge]
+    );
+    mesh.position.set(0, -offsetY, 0);
+    return { mesh, height: captionHeight };
+  }
+
+  function makeStarShape(radius, innerRadius) {
+    const T = window.THREE;
+    const shape = new T.Shape();
+    for (let index = 0; index < 8; index += 1) {
+      const angle = Math.PI / 2 + index * Math.PI / 4;
+      const radiusAtPoint = index % 2 === 0 ? radius : innerRadius;
+      const x = Math.cos(angle) * radiusAtPoint;
+      const y = Math.sin(angle) * radiusAtPoint;
+      if (!index) shape.moveTo(x, y); else shape.lineTo(x, y);
+    }
+    shape.closePath();
+    return shape;
+  }
+
+  function makeMemoryModel(kind, file, caption) {
+    const T = window.THREE;
+    const { paper, ink } = getMemoryColors();
+    const pixelScale = memoryScene.worldPerPixel;
+    const root = new T.Group();
+    root.userData.pixelScale = pixelScale;
+    if (kind === 'star') {
+      const geometry = new T.ExtrudeGeometry(makeStarShape(86 * pixelScale, 28 * pixelScale), {
+        depth: 10 * pixelScale,
+        bevelEnabled: true,
+        bevelSegments: 2,
+        bevelSize: 1.5 * pixelScale,
+        bevelThickness: 1.5 * pixelScale
+      });
+      geometry.center();
+      const edge = new T.MeshStandardMaterial({ color: paper, roughness: .52, metalness: .08 });
+      const face = new T.MeshStandardMaterial({ color: ink, roughness: .38, metalness: .18 });
+      root.add(new T.Mesh(geometry, [edge, face]));
+      return root;
+    }
+    const texture = memoryScene.textures.get(file);
+    const aspectRatio = texture?.image?.width && texture?.image?.height ? texture.image.width / texture.image.height : memoryAspectRatios.get(file) || 1;
+    const width = 156 * pixelScale;
+    const height = width / aspectRatio;
+    const thickness = 10 * pixelScale;
+    const edge = new T.MeshStandardMaterial({ color: ink, roughness: .5, metalness: .1 });
+    const front = new T.MeshStandardMaterial({ color: texture ? 0xffffff : paper, map: texture || null, roughness: .72, metalness: 0 });
+    const card = new T.Mesh(new T.BoxGeometry(width, height, thickness), [edge, edge, edge, edge, front, edge]);
+    root.userData.photoMaterial = front;
+    root.add(card);
+    const captionMesh = makeCaptionMesh(caption, width, pixelScale, ink, paper, height / 2 + 14 * pixelScale, thickness);
+    root.add(captionMesh.mesh);
+    return root;
+  }
+
+  function disposeMemoryModel(model) {
+    if (!model) return;
+    model.traverse(object => {
+      if (!object.isMesh) return;
+      object.geometry?.dispose();
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach(material => {
+        if (material?.map?.userData?.memoryCaption) material.map.dispose();
+        material?.dispose();
+      });
+    });
+    memoryScene.scene.remove(model);
+  }
+
+  function requestMemoryFrame() {
+    if (!memoryScene.frame) memoryScene.frame = requestAnimationFrame(updateMemoryFlight);
+  }
+
+  function spawnMemory(slot, time) {
+    const kind = memorySpawnSequence[memoryScene.sequenceIndex % memorySpawnSequence.length];
+    memoryScene.sequenceIndex += 1;
+    const serial = memoryScene.serial;
+    memoryScene.serial += 1;
+    let file = null;
+    let caption = '';
+    if (kind === 'star') {
+    } else {
+      [file, caption] = memories[memoryScene.photoIndex % memories.length];
+      memoryScene.photoIndex += 1;
+    }
+    disposeMemoryModel(slot.model);
+    slot.model = makeMemoryModel(kind, file, caption);
+    memoryScene.scene.add(slot.model);
+    slot.kind = kind;
+    slot.file = file;
+    const variation = seeded(serial + 500);
+    slot.flight = {
+      angle: memoryDirections[serial % memoryDirections.length] + (seeded(serial + 520) - .5) * .18,
+      duration: memoryLifetimeMin + seeded(serial + 620) * (memoryLifetimeMax - memoryLifetimeMin),
+      distance: Math.hypot(state.width, state.height) * (1.13 + variation * .24),
+      rotation: seeded(serial + 540) * .72 - .36,
+      spinX: (seeded(serial + 560) * 2 - 1) * (kind === 'star' ? 7.5 : 4.4),
+      spinY: (seeded(serial + 580) * 2 - 1) * (kind === 'star' ? 8.4 : 5.1),
+      spinZ: (seeded(serial + 600) * 2 - 1) * (kind === 'star' ? 6.6 : 3.8),
+      scale: kind === 'star' ? 3 + variation * 4 : 8 + variation * 8
+    };
+    slot.startedAt = time;
+  }
+
+  function paintMemory(slot, progress) {
+    const { model, flight } = slot;
+    if (!model || !flight) return;
+    const travel = Math.pow(progress, 1.58);
+    const depth = progress * progress;
+    const pixelScale = memoryScene.worldPerPixel;
+    const x = memoryScene.spawnOrigin.x + Math.cos(flight.angle) * flight.distance * travel * pixelScale;
+    const y = memoryScene.spawnOrigin.y - Math.sin(flight.angle) * flight.distance * travel * pixelScale;
+    const scale = (.055 + depth * flight.scale) * (pixelScale / model.userData.pixelScale);
+    model.position.set(x, y, -520 + depth * 810);
+    model.scale.setScalar(scale);
+    model.rotation.set(
+      flight.rotation + progress * flight.spinX,
+      flight.rotation * .7 + progress * flight.spinY,
+      flight.rotation + progress * flight.spinZ
+    );
+  }
+
+  function updateMemoryFlight(time) {
+    memoryScene.frame = 0;
+    if (memoryScene.smileyVisible && time >= memoryScene.nextSpawnAt) {
+      const freeSlot = memoryScene.slots.find(slot => !slot.startedAt);
+      if (freeSlot) {
+        spawnMemory(freeSlot, time);
+        memoryScene.nextSpawnAt = time + memorySpawnInterval;
+      } else {
+        memoryScene.nextSpawnAt = time + 100;
+      }
+    }
+    let hasFlyingObjects = false;
+    memoryScene.slots.forEach(slot => {
+      if (!slot.startedAt) return;
+      const progress = (time - slot.startedAt) / slot.flight.duration;
+      if (progress >= 1) {
+        disposeMemoryModel(slot.model);
+        slot.startedAt = 0;
+        slot.flight = null;
+        slot.model = null;
+        slot.kind = null;
+        slot.file = null;
+        return;
+      }
+      hasFlyingObjects = true;
+      paintMemory(slot, clamp(progress));
+    });
+    memoryScene.renderer?.render(memoryScene.scene, memoryScene.camera);
+    if (memoryScene.smileyVisible || hasFlyingObjects) requestMemoryFrame();
   }
 
   function gridPath(width, height, focalY = .36) {
@@ -430,6 +710,7 @@
     const contact = $('.contact');
     $('.contact-grid').setAttribute('viewBox', `0 0 ${contact.clientWidth} ${contact.clientHeight}`);
     $('.contact-grid path').setAttribute('d', gridPath(contact.clientWidth, contact.clientHeight, .28));
+    resizeMemoryScene();
     updateScroll();
   }
 
@@ -867,22 +1148,6 @@
     $('.about-link--br', connectors).setAttribute('d', `M${lowerRight} ${lowerTop}L${right} ${bottom}`);
   }
 
-  function updateMemories() {
-    const section = $('.my-way'); const rect = section.getBoundingClientRect();
-    const progress = clamp((state.height - rect.top) / (state.height + section.offsetHeight));
-    document.querySelectorAll('.memory').forEach((item, index) => {
-      const angle = index / memories.length * Math.PI * 2 + seeded(index + 200) * .8;
-      const radius = (1 - progress) * Math.max(state.width, state.height) * .78 + 80 + seeded(index + 230) * 220;
-      const x = Math.cos(angle) * radius + (seeded(index + 260) - .5) * state.width * .2;
-      const y = Math.sin(angle) * radius * .58 + (seeded(index + 290) - .5) * state.height * .18;
-      const z = -380 + progress * 590 + seeded(index + 320) * 180;
-      const rotate = (seeded(index + 350) * 40 - 20) + progress * (index % 2 ? 18 : -18);
-      item.style.opacity = clamp(progress * 2.2 - seeded(index + 380) * .5).toFixed(3);
-      item.style.transform = `translate3d(calc(-50% + ${x}px),calc(-50% + ${y}px),${z}px) rotate(${rotate}deg)`;
-    });
-    $('.my-way-smiley').style.transform = `translate(-50%,-50%) rotate(${progress * 280}deg) scale(${.7 + progress * .6})`;
-  }
-
   function applyPaperTheme(index) {
     paperThemeIndex = ((index % paperPalette.length) + paperPalette.length) % paperPalette.length;
     const color = paperPalette[paperThemeIndex];
@@ -893,7 +1158,7 @@
   }
 
   function updateScroll() {
-    state.scrollY = scrollY; updateAboutBlock(); updateWork(); updateMemories(); state.ticking = false;
+    state.scrollY = scrollY; updateAboutBlock(); updateWork(); state.ticking = false;
   }
 
   function bind() {
