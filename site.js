@@ -4,6 +4,15 @@
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const state = { width: innerWidth, height: innerHeight, pointerX: .5, pointerY: .5, scrollY: 0, ticking: false };
   const webgl = { renderer: null, scene: null, camera: null, meshes: [] };
+  const workIntroState = { outer: null, inner: null, dotField: null, title: null, scene: null, spread: null, measured: false, coverScale: 1, cloneCount: 0 };
+  const workAnchorBuffer = 5;
+  const workInnerSpeed = .8;
+  const workTitleSpeed = .1;
+  const workExpansionScreens = 3;
+  const workFadeScreens = .35;
+  const workCardScreens = .6;
+  const workTailScreens = .35;
+  const workTimelineState = { expansion: 0, fade: 0, media: 0, tail: 0, total: 0 };
   const paperPalette = ['#e1cab8', '#f40c3f', '#fff2ed'];
   let paperThemeIndex = 0;
 
@@ -127,33 +136,7 @@
     ['Rudl-Transition.CcgAkF6S.mp4', 'https://www.rudlundschwarm.at/'],
     ['247-Foot.CfYyug9d.mp4', 'https://247artists.com/'],
     ['Nod-404.DvJptcy9.mp4', 'https://nodcoding.com/'],
-    ['Duten-Shapes.DvaTdo7l.mp4', 'https://duten.com/'],
-    ['Vanguart-Scroll-3.BwmkFszE.mp4', 'https://vanguart.com/'],
-    ['Generous-Scroll1.0UenKQ_7.mp4', 'https://generousbranding.com/'],
-    ['Nod-Transition.Cgjsr7Jp.mp4', 'https://nodcoding.com/'],
-    ['Pantoufle-Clip.BfFhcegb.mp4', 'https://www.pantoufle-hotels.fr/en/'],
-    ['Vanguart-Scroll-2.DRw1ZqR4.mp4', 'https://vanguart.com/'],
-    ['247-Scroll-1.BpbKKJ7S.mp4', 'https://247artists.com/'],
-    ['Rudl-Scroll.DmL08CDl.mp4', 'https://www.rudlundschwarm.at/'],
-    ['Vanguart-Scroll-1.kd442gP8.mp4', 'https://vanguart.com/'],
-    ['Pen-4.BOCLYASq.mp4', 'https://codepen.io/wodniack'],
-    ['Duten-3D.CnijAj5p.mp4', 'https://duten.com/'],
-    ['247-Hero.DKz-ABVC.mp4', 'https://247artists.com/'],
-    ['Duten-Fluid.t8C3AKXP.mp4', 'https://duten.com/'],
-    ['Vanguart-360.DXA8KizZ.mp4', 'https://vanguart.com/'],
-    ['247-Scroll-2.eL-R-Y1L.mp4', 'https://247artists.com/'],
-    ['Qbit-Shape.BySbOvpY.mp4', 'https://qbitcapital.xyz/'],
-    ['Tissot-360.qz0Gq5Ys.mp4', '#'],
-    ['Duten-Products.D0b17Eb7.mp4', 'https://duten.com/'],
-    ['Pantoufle-Transition.CpZVk1ej.mp4', 'https://www.pantoufle-hotels.fr/en/'],
-    ['Pantoufle-Button.B5UTdu2U.mp4', 'https://www.pantoufle-hotels.fr/en/'],
-    ['Deside-Site.CmhdHL0t.mp4', 'https://www.desiderecrutement.com/en/'],
-    ['Qbit-Menu.DQBETGn4.mp4', 'https://qbitcapital.xyz/'],
-    ['Nod-Links.De8GBDpL.mp4', 'https://nodcoding.com/'],
-    ['HS-Site.Br4spn2E.mp4', 'https://honorsociety.tv/'],
-    ['Nod-Flower.VBa6NQlZ.mp4', 'https://nodcoding.com/'],
-    ['Duten-Intro.CP3CW1O6.mp4', 'https://duten.com/'],
-    ['Pen-6.CMyHVvwm.mp4', 'https://codepen.io/wodniack']
+    ['Duten-Shapes.DvaTdo7l.mp4', 'https://duten.com/']
   ];
 
   const memories = [
@@ -331,11 +314,6 @@
     updateBinary();
     if (!reducedMotion) setInterval(updateBinary, 100);
 
-    const wall = $('.work-wall');
-    'WORK'.repeat(11).split('').forEach(letter => {
-      const span = document.createElement('span'); span.textContent = letter; wall.append(span);
-    });
-
   }
 
   function buildWork() {
@@ -347,6 +325,35 @@
       card.innerHTML = `<video data-src="./assets/wodniack/videos/${file}" width="1082" height="636" muted loop playsinline preload="none"></video><footer><span>${file.split('.')[0]}</span><span>${String(index + 1).padStart(2, '0')}—${String(9321 + index * 137).slice(-6)}</span></footer>`;
       host.append(card);
     });
+  }
+
+  function getSpreadCount() {
+    const estimate = Math.ceil(state.width / 96);
+    const count = Math.max(11, Math.min(21, estimate % 2 ? estimate : estimate + 1));
+    return count % 2 ? count : count - 1;
+  }
+
+  function buildWorkSpread() {
+    const host = $('.work-spread');
+    if (!host) return;
+    const count = getSpreadCount();
+    host.replaceChildren();
+    ['W', 'O', 'R', 'K'].forEach((letter, rowIndex) => {
+      const row = document.createElement('div');
+      row.className = 'work-spread-row';
+      row.dataset.row = String(rowIndex);
+      row.style.top = '50%';
+      for (let index = 0; index < count; index += 1) {
+        const clone = document.createElement('span');
+        clone.className = 'work-spread-letter';
+        clone.textContent = letter;
+        clone.dataset.index = String(index);
+        clone.setAttribute('aria-hidden', 'true');
+        row.append(clone);
+      }
+      host.append(row);
+    });
+    workIntroState.cloneCount = count;
   }
 
   function initWorkWebGL() {
@@ -426,6 +433,8 @@
   function resize() {
     state.width = innerWidth; state.height = innerHeight;
     fitHeroTitle();
+    measureWorkIntro();
+    measureWorkTimeline();
     if (webgl.renderer) {
       webgl.renderer.setSize(state.width, state.height, false);
       Object.assign(webgl.camera, { left: -state.width / 2, right: state.width / 2, top: state.height / 2, bottom: -state.height / 2 });
@@ -450,15 +459,152 @@
     const promise = video.play(); if (promise) promise.catch(() => {});
   }
 
+  function measureWorkIntro() {
+    const outer = $('.work-capsule--outer');
+    const inner = $('.work-capsule--inner');
+    const dotField = $('.work-dot-field');
+    const title = $('.work-title');
+    const scene = $('.work-zoom-scene');
+    const spread = $('.work-spread');
+    if (!outer || !inner || !dotField || !title || !scene || !spread) return;
+    workIntroState.outer = outer;
+    workIntroState.inner = inner;
+    workIntroState.dotField = dotField;
+    workIntroState.title = title;
+    workIntroState.scene = scene;
+    workIntroState.spread = spread;
+    workIntroState.measured = true;
+    if (workIntroState.cloneCount !== getSpreadCount()) buildWorkSpread();
+    const width = Math.max(inner.offsetWidth, 1);
+    const height = Math.max(inner.offsetHeight, 1);
+    const stage = $('.work-stage');
+    workIntroState.coverScale = Math.max((stage?.clientWidth || state.width) * 1.04 / width, (stage?.clientHeight || state.height) * 1.04 / height);
+    measureWorkAperture();
+  }
+
+  function measureWorkTimeline() {
+    const section = $('.work');
+    if (!section) return;
+    workTimelineState.expansion = state.height * workExpansionScreens;
+    workTimelineState.fade = state.height * workFadeScreens;
+    workTimelineState.media = state.height * workItems.length * workCardScreens;
+    workTimelineState.tail = state.height * workTailScreens;
+    workTimelineState.total = workAnchorBuffer + workTimelineState.expansion + workTimelineState.fade + workTimelineState.media + workTimelineState.tail;
+    section.style.height = `${state.height + workTimelineState.total}px`;
+  }
+
+  function measureWorkAperture() {
+    const stage = $('.work-stage');
+    const aperture = $('.work-aperture');
+    if (!stage || !aperture || !workIntroState.outer) return;
+    const width = stage.clientWidth;
+    const height = stage.clientHeight;
+    const targetCellSize = 64;
+    const columns = Math.max(1, Math.round(width / targetCellSize));
+    const rows = Math.max(1, Math.round(height / targetCellSize));
+    aperture.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    ['.work-aperture-cover', '.work-aperture-paper', '.work-aperture-dot-field'].forEach(selector => {
+      const rect = $(selector, aperture);
+      rect.setAttribute('x', '0'); rect.setAttribute('y', '0');
+      rect.setAttribute('width', String(width)); rect.setAttribute('height', String(height));
+    });
+    const path = [];
+    for (let column = 0; column <= columns; column += 1) {
+      const x = column * width / columns;
+      path.push(`M${x} 0V${height}`);
+    }
+    for (let row = 0; row <= rows; row += 1) {
+      const y = row * height / rows;
+      path.push(`M0 ${y}H${width}`);
+    }
+    $('.work-aperture-lines', aperture).setAttribute('d', path.join(''));
+    updateWorkAperture();
+  }
+
+  function updateWorkAperture() {
+    const stage = $('.work-stage');
+    const hole = $('.work-aperture-hole');
+    const outer = workIntroState.outer;
+    if (!stage || !hole || !outer) return;
+    const width = outer.offsetWidth;
+    const height = outer.offsetHeight;
+    // Keep the mask in the unscaled scene coordinate system. The scene
+    // transform then scales the grid and its aperture exactly once.
+    hole.setAttribute('x', String((stage.clientWidth - width) / 2));
+    hole.setAttribute('y', String((stage.clientHeight - height) / 2));
+    hole.setAttribute('width', String(width));
+    hole.setAttribute('height', String(height));
+    hole.setAttribute('rx', String(width / 2));
+    hole.setAttribute('ry', String(height / 2));
+  }
+
+  function updateWorkSpread(progress) {
+    const { spread, inner } = workIntroState;
+    if (!spread || !inner) return;
+    const count = workIntroState.cloneCount;
+    const localWidth = Math.max(inner.offsetWidth, 1);
+    const localHeight = Math.max(inner.offsetHeight, 1);
+    const span = Math.max(localWidth / Math.max(count - 1, 1), 10);
+    spread.style.opacity = clamp(progress * 1.4).toFixed(3);
+    spread.querySelectorAll('.work-spread-row').forEach((row, rowIndex) => {
+      row.style.transform = `translate3d(0,0,0)${rowIndex === 0 || rowIndex === 3 ? ' rotate(' + ((progress - .5) * 6) + 'deg)' : ''}`;
+      row.querySelectorAll('.work-spread-letter').forEach((clone, index) => {
+        const centered = index - (count - 1) / 2;
+        const delay = Math.abs(centered) / Math.max((count - 1) / 2, 1) * .08;
+        const localProgress = clamp((progress - delay) / (1 - delay));
+        const eased = localProgress * localProgress * (3 - 2 * localProgress);
+        const x = centered * span * eased;
+        const y = (rowIndex - 1.5) * localHeight * .24;
+        clone.style.transform = `translate3d(${x}px,${y}px,0) translate(-50%,-50%)`;
+        clone.style.opacity = centered === 0 ? '.4' : '1';
+      });
+    });
+  }
+
+  function updateWorkIntro(entryProgress, expansionProgress, fadeProgress, postDistance) {
+    if (!workIntroState.measured) measureWorkIntro();
+    const { outer, inner, dotField, title, scene } = workIntroState;
+    if (!outer || !inner || !dotField || !title || !scene) return;
+    if (reducedMotion) {
+      outer.style.transform = 'translate3d(-50%,-50%,0)';
+      inner.style.transform = 'translate3d(-50%,-50%,0)';
+      dotField.style.transform = 'translate3d(-50%,-50%,0)';
+      title.style.transform = 'translate3d(0,0,0)';
+      title.style.opacity = postDistance >= workTimelineState.expansion + workTimelineState.fade ? '0' : '1';
+      scene.style.transform = 'scale(1)';
+      updateWorkSpread(0);
+      updateWorkAperture();
+      return;
+    }
+    const innerShift = postDistance > 0 ? 0 : -state.height * (1 - workInnerSpeed) * (1 - entryProgress);
+    const titleOuterShift = postDistance > 0 ? 0 : -state.height * (1 - workTitleSpeed) * (1 - entryProgress);
+    outer.style.transform = 'translate3d(-50%,-50%,0)';
+    const easedExpansion = expansionProgress * expansionProgress * (3 - 2 * expansionProgress);
+    const sceneScale = 1 + (workIntroState.coverScale - 1) * easedExpansion;
+    inner.style.transform = `translate3d(-50%,calc(-50% + ${innerShift}px),0)`;
+    const dotScale = (1 + (sceneScale - 1) * .2) / sceneScale;
+    dotField.style.transform = `translate3d(-50%,-50%,0) scale(${dotScale.toFixed(4)})`;
+    title.style.transform = `translate3d(0,${titleOuterShift - innerShift}px,0)`;
+    title.style.opacity = clamp(1 - expansionProgress * .95 - fadeProgress).toFixed(3);
+    scene.style.transform = `scale(${sceneScale})`;
+    updateWorkSpread(expansionProgress);
+    updateWorkAperture();
+  }
+
   function updateWork() {
     const section = $('.work'); const rect = section.getBoundingClientRect();
-    const total = section.offsetHeight - state.height; const progress = clamp(-rect.top / Math.max(total, 1));
-    const intro = clamp(1 - progress / .065); $('.work-stage').style.setProperty('--intro', intro.toFixed(3));
-    $('.work-title').style.opacity = clamp(1 - progress / .08).toFixed(3);
-    $('.work-wall').style.transform = `translate3d(${Math.sin(progress * Math.PI * 4) * -4}vw,${progress * -7}vh,0) scale(${1 + progress * .13})`;
+    const entryProgress = clamp(1 - rect.top / Math.max(state.height, 1));
+    const postDistance = Math.max(0, -rect.top - workAnchorBuffer);
+    const expansionProgress = clamp(postDistance / Math.max(workTimelineState.expansion, 1));
+    const fadeProgress = clamp((postDistance - workTimelineState.expansion) / Math.max(workTimelineState.fade, 1));
+    const mediaDistance = Math.max(0, postDistance - workTimelineState.expansion - workTimelineState.fade);
+    const mediaProgress = clamp(mediaDistance / Math.max(workTimelineState.media, 1));
+    updateWorkIntro(entryProgress, expansionProgress, fadeProgress, postDistance);
     document.querySelectorAll('.work-card').forEach((card, index) => {
-      const center = .075 + index * (.86 / (workItems.length - 1));
-      const local = (progress - center) / .045; const visible = Math.abs(local) < 2.05;
+      const segment = 1 / workItems.length;
+      const center = (index + .5) * segment;
+      const local = (mediaProgress - center) / (segment * .42);
+      const visible = mediaDistance > 0 && mediaProgress >= index * segment && mediaProgress <= (index + 1) * segment;
       if (visible) ensureVideo(card);
       const direction = index % 2 ? 1 : -1;
       const seedX = seeded(index + 10) * 62 - 31; const seedY = seeded(index + 70) * 48 - 24;
@@ -629,6 +775,7 @@
       const shellObserver = new ResizeObserver(scheduleResize);
       shellObserver.observe($('.site-shell'));
     }
+    if (document.fonts?.ready) document.fonts.ready.then(resize);
     const contrast = $('.contrast');
     applyPaperTheme(0);
     contrast.addEventListener('click', () => applyPaperTheme(paperThemeIndex + 1));

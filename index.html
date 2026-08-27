@@ -49,9 +49,32 @@
 
       <section class="work" id="work" aria-labelledby="work-title">
         <div class="work-stage">
-          <div class="work-grid" aria-hidden="true"></div>
-          <h2 id="work-title" class="work-title"><span>W</span><span>O</span><span>R</span><span>K</span></h2>
-          <div class="work-wall" aria-hidden="true"></div>
+          <div class="work-zoom-scene">
+            <div class="work-grid" aria-hidden="true"></div>
+            <svg class="work-aperture" aria-hidden="true" focusable="false" preserveAspectRatio="none">
+            <defs>
+              <pattern id="work-aperture-dots" width="12" height="12" patternUnits="userSpaceOnUse">
+                <circle cx="1" cy="1" r="1"></circle>
+              </pattern>
+              <mask id="work-aperture-mask" maskUnits="userSpaceOnUse">
+                <rect class="work-aperture-cover"></rect>
+                <rect class="work-aperture-hole"></rect>
+              </mask>
+            </defs>
+            <g mask="url(#work-aperture-mask)">
+              <rect class="work-aperture-paper"></rect>
+              <path class="work-aperture-lines"></path>
+              <rect class="work-aperture-dot-field"></rect>
+            </g>
+            </svg>
+            <div class="work-capsule work-capsule--outer">
+              <div class="work-capsule work-capsule--inner">
+                <div class="work-dot-field" aria-hidden="true"></div>
+                <h2 id="work-title" class="work-title"><span>W</span><span>O</span><span>R</span><span>K</span></h2>
+                <div class="work-spread" aria-hidden="true"></div>
+              </div>
+            </div>
+          </div>
           <div class="work-media" id="work-media"></div>
         </div>
       </section>
