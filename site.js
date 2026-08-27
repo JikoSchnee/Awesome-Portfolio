@@ -4,15 +4,22 @@
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const state = { width: innerWidth, height: innerHeight, pointerX: .5, pointerY: .5, scrollY: 0, ticking: false };
   const webgl = { renderer: null, scene: null, camera: null, meshes: [] };
-  const workIntroState = { outer: null, inner: null, dotField: null, title: null, scene: null, spread: null, measured: false, coverScale: 1, cloneCount: 0 };
+  const workIntroState = { outer: null, inner: null, dotField: null, title: null, typeLayer: null, scene: null, spread: null, measured: false, coverScale: 1, cloneCount: 0 };
   const workAnchorBuffer = 5;
   const workInnerSpeed = .8;
   const workTitleSpeed = .1;
+  const workSpreadTargetColumnWidth = 256;
+  const workSpreadMinimumCopiesPerSide = 2;
+  const workTitleLineHeight = .78;
+  const workTitleGap = 10;
+  const workSpreadEdgeGrowth = .34;
+  const workOuterArcRatio = .14;
+  const workInnerArcRatio = .065;
   const workExpansionScreens = 3;
-  const workFadeScreens = .35;
+  const workHoldScreens = .35;
   const workCardScreens = .6;
   const workTailScreens = .35;
-  const workTimelineState = { expansion: 0, fade: 0, media: 0, tail: 0, total: 0 };
+  const workTimelineState = { expansion: 0, hold: 0, media: 0, tail: 0, total: 0 };
   const paperPalette = ['#e1cab8', '#f40c3f', '#fff2ed'];
   let paperThemeIndex = 0;
 
@@ -327,33 +334,36 @@
     });
   }
 
-  function getSpreadCount() {
-    const estimate = Math.ceil(state.width / 96);
-    const count = Math.max(11, Math.min(21, estimate % 2 ? estimate : estimate + 1));
-    return count % 2 ? count : count - 1;
+  function getWorkSpreadCopies() {
+    const copiesPerSide = Math.max(
+      workSpreadMinimumCopiesPerSide,
+      Math.ceil(state.width / workSpreadTargetColumnWidth)
+    );
+    return copiesPerSide * 2;
   }
 
   function buildWorkSpread() {
     const host = $('.work-spread');
     if (!host) return;
-    const count = getSpreadCount();
+    const copyCount = getWorkSpreadCopies();
+    const copiesPerSide = copyCount / 2;
     host.replaceChildren();
     ['W', 'O', 'R', 'K'].forEach((letter, rowIndex) => {
       const row = document.createElement('div');
       row.className = 'work-spread-row';
       row.dataset.row = String(rowIndex);
-      row.style.top = '50%';
-      for (let index = 0; index < count; index += 1) {
+      for (let index = 0; index < copyCount; index += 1) {
         const clone = document.createElement('span');
         clone.className = 'work-spread-letter';
         clone.textContent = letter;
         clone.dataset.index = String(index);
+        clone.dataset.side = String(index < copiesPerSide ? index - copiesPerSide : index - copiesPerSide + 1);
         clone.setAttribute('aria-hidden', 'true');
         row.append(clone);
       }
       host.append(row);
     });
-    workIntroState.cloneCount = count;
+    workIntroState.cloneCount = copyCount;
   }
 
   function initWorkWebGL() {
@@ -464,17 +474,19 @@
     const inner = $('.work-capsule--inner');
     const dotField = $('.work-dot-field');
     const title = $('.work-title');
+    const typeLayer = $('.work-type-layer');
     const scene = $('.work-zoom-scene');
     const spread = $('.work-spread');
-    if (!outer || !inner || !dotField || !title || !scene || !spread) return;
+    if (!outer || !inner || !dotField || !title || !typeLayer || !scene || !spread) return;
     workIntroState.outer = outer;
     workIntroState.inner = inner;
     workIntroState.dotField = dotField;
     workIntroState.title = title;
+    workIntroState.typeLayer = typeLayer;
     workIntroState.scene = scene;
     workIntroState.spread = spread;
     workIntroState.measured = true;
-    if (workIntroState.cloneCount !== getSpreadCount()) buildWorkSpread();
+    if (workIntroState.cloneCount !== getWorkSpreadCopies()) buildWorkSpread();
     const width = Math.max(inner.offsetWidth, 1);
     const height = Math.max(inner.offsetHeight, 1);
     const stage = $('.work-stage');
@@ -486,10 +498,10 @@
     const section = $('.work');
     if (!section) return;
     workTimelineState.expansion = state.height * workExpansionScreens;
-    workTimelineState.fade = state.height * workFadeScreens;
+    workTimelineState.hold = state.height * workHoldScreens;
     workTimelineState.media = state.height * workItems.length * workCardScreens;
     workTimelineState.tail = state.height * workTailScreens;
-    workTimelineState.total = workAnchorBuffer + workTimelineState.expansion + workTimelineState.fade + workTimelineState.media + workTimelineState.tail;
+    workTimelineState.total = workAnchorBuffer + workTimelineState.expansion + workTimelineState.hold + workTimelineState.media + workTimelineState.tail;
     section.style.height = `${state.height + workTimelineState.total}px`;
   }
 
@@ -538,41 +550,107 @@
     hole.setAttribute('ry', String(height / 2));
   }
 
-  function updateWorkSpread(progress) {
-    const { spread, inner } = workIntroState;
-    if (!spread || !inner) return;
-    const count = workIntroState.cloneCount;
-    const localWidth = Math.max(inner.offsetWidth, 1);
-    const localHeight = Math.max(inner.offsetHeight, 1);
-    const span = Math.max(localWidth / Math.max(count - 1, 1), 10);
-    spread.style.opacity = clamp(progress * 1.4).toFixed(3);
+  function updateWorkTypeClip(sceneScale, innerShift = 0) {
+    const { typeLayer, inner } = workIntroState;
+    const stage = $('.work-stage');
+    if (!typeLayer || !inner || !stage) return;
+    const width = inner.offsetWidth * sceneScale;
+    const height = inner.offsetHeight * sceneScale;
+    const centerY = stage.clientHeight / 2 + innerShift * sceneScale;
+    const left = (stage.clientWidth - width) / 2;
+    const right = stage.clientWidth - left - width;
+    const top = centerY - height / 2;
+    const bottom = stage.clientHeight - top - height;
+    if (left <= 0 && right <= 0 && top <= 0 && bottom <= 0) {
+      typeLayer.style.clipPath = 'inset(0)';
+      return;
+    }
+    const radius = Math.min(width, height) / 2;
+    typeLayer.style.clipPath = `inset(${top.toFixed(3)}px ${right.toFixed(3)}px ${bottom.toFixed(3)}px ${left.toFixed(3)}px round ${radius.toFixed(3)}px)`;
+  }
+
+  function updateWorkTypeMetrics(workScale, spreadProgress) {
+    const { typeLayer } = workIntroState;
+    const stage = $('.work-stage');
+    if (!typeLayer) return 118;
+    const baseSize = Math.min(150, Math.max(118, state.width * .104));
+    const preferredSize = baseSize * workScale;
+    const height = Math.max(stage?.clientHeight || state.height, 1);
+    const gapRatio = workTitleGap / baseSize;
+    const titleStack = workTitleLineHeight * 4 + gapRatio * 3;
+    const edgeRowOffset = titleStack / 2 - workTitleLineHeight / 2;
+    const edgeLetterHalfHeight = workTitleLineHeight / 2 * (1 + workSpreadEdgeGrowth * spreadProgress);
+    const arcHeight = height * workOuterArcRatio * spreadProgress;
+    const verticalGutter = clamp(height * .04, 20, 48);
+    const availableHalfHeight = Math.max(0, height / 2 - verticalGutter - arcHeight);
+    const maxSize = availableHalfHeight / Math.max(edgeRowOffset + edgeLetterHalfHeight, .001);
+    const size = Math.max(40, Math.min(preferredSize, maxSize));
+    typeLayer.style.setProperty('--work-type-size', `${size.toFixed(3)}px`);
+    typeLayer.style.setProperty('--work-type-gap', `${(size * gapRatio).toFixed(3)}px`);
+    return size;
+  }
+
+  function updateWorkTypeOffset(offset) {
+    const { title, spread } = workIntroState;
+    if (!title || !spread) return;
+    const rounded = Math.round(offset);
+    title.style.top = `${rounded}px`;
+    title.style.bottom = `${-rounded}px`;
+    spread.style.top = `${rounded}px`;
+    spread.style.bottom = `${-rounded}px`;
+  }
+
+  function updateWorkSpread(progress, typeSize) {
+    const { spread, title } = workIntroState;
+    if (!spread || !title) return;
+    const titleLetters = document.querySelectorAll('.work-title span');
+    const width = Math.max(spread.clientWidth, 1);
+    const height = Math.max(spread.clientHeight, 1);
+    const copyCount = Math.max(workIntroState.cloneCount, 2);
+    const step = width * 1.1 / copyCount;
+    const outerArc = height * workOuterArcRatio;
+    const innerArc = height * workInnerArcRatio;
+    const eased = progress * progress * (3 - 2 * progress);
+    spread.style.opacity = '1';
     spread.querySelectorAll('.work-spread-row').forEach((row, rowIndex) => {
-      row.style.transform = `translate3d(0,0,0)${rowIndex === 0 || rowIndex === 3 ? ' rotate(' + ((progress - .5) * 6) + 'deg)' : ''}`;
-      row.querySelectorAll('.work-spread-letter').forEach((clone, index) => {
-        const centered = index - (count - 1) / 2;
-        const delay = Math.abs(centered) / Math.max((count - 1) / 2, 1) * .08;
-        const localProgress = clamp((progress - delay) / (1 - delay));
-        const eased = localProgress * localProgress * (3 - 2 * localProgress);
-        const x = centered * span * eased;
-        const y = (rowIndex - 1.5) * localHeight * .24;
-        clone.style.transform = `translate3d(${x}px,${y}px,0) translate(-50%,-50%)`;
-        clone.style.opacity = centered === 0 ? '.4' : '1';
+      const titleLetter = titleLetters[rowIndex];
+      const baseY = titleLetter ? titleLetter.offsetTop + titleLetter.offsetHeight / 2 - title.clientHeight / 2 : 0;
+      const arc = rowIndex === 0 || rowIndex === 3 ? outerArc : innerArc;
+      const arcDirection = rowIndex < 2 ? -1 : 1;
+      row.querySelectorAll('.work-spread-letter').forEach(clone => {
+        const side = Number(clone.dataset.side);
+        const distance = Math.abs(side) / (copyCount / 2);
+        const x = side * step * eased;
+        const y = baseY + arcDirection * arc * distance * distance * eased;
+        const scale = 1 + workSpreadEdgeGrowth * distance * distance * eased;
+        const fontSize = typeSize * scale;
+        clone.style.left = `${Math.round(width / 2 + x - fontSize * .325)}px`;
+        clone.style.top = `${Math.round(height / 2 + y - fontSize * workTitleLineHeight / 2)}px`;
+        clone.style.fontSize = `${fontSize.toFixed(3)}px`;
+        clone.style.transform = 'none';
+        clone.style.opacity = '1';
       });
     });
   }
 
-  function updateWorkIntro(entryProgress, expansionProgress, fadeProgress, postDistance) {
+  function updateWorkIntro(entryProgress, expansionProgress, postDistance) {
     if (!workIntroState.measured) measureWorkIntro();
-    const { outer, inner, dotField, title, scene } = workIntroState;
-    if (!outer || !inner || !dotField || !title || !scene) return;
+    const { outer, inner, dotField, title, typeLayer, scene, spread } = workIntroState;
+    if (!outer || !inner || !dotField || !title || !typeLayer || !scene || !spread) return;
     if (reducedMotion) {
+      const sceneScale = workIntroState.coverScale;
+      const workScale = 1 + (sceneScale - 1) * .1;
+      const typeSize = updateWorkTypeMetrics(workScale, 1);
       outer.style.transform = 'translate3d(-50%,-50%,0)';
       inner.style.transform = 'translate3d(-50%,-50%,0)';
-      dotField.style.transform = 'translate3d(-50%,-50%,0)';
-      title.style.transform = 'translate3d(0,0,0)';
-      title.style.opacity = postDistance >= workTimelineState.expansion + workTimelineState.fade ? '0' : '1';
-      scene.style.transform = 'scale(1)';
-      updateWorkSpread(0);
+      dotField.style.transform = `translate3d(-50%,-50%,0) scale(${(1 / sceneScale).toFixed(4)})`;
+      dotField.style.setProperty('--dot-radius', '1px');
+      dotField.style.setProperty('--dot-spacing', `${(12 * (1 + (sceneScale - 1) * .2)).toFixed(3)}px`);
+      title.style.opacity = '1';
+      scene.style.transform = `scale(${sceneScale})`;
+      updateWorkTypeOffset(0);
+      updateWorkTypeClip(sceneScale, 0);
+      updateWorkSpread(1, typeSize);
       updateWorkAperture();
       return;
     }
@@ -581,13 +659,22 @@
     outer.style.transform = 'translate3d(-50%,-50%,0)';
     const easedExpansion = expansionProgress * expansionProgress * (3 - 2 * expansionProgress);
     const sceneScale = 1 + (workIntroState.coverScale - 1) * easedExpansion;
+    const workScale = 1 + (sceneScale - 1) * .1;
+    const typeSize = updateWorkTypeMetrics(workScale, easedExpansion);
     inner.style.transform = `translate3d(-50%,calc(-50% + ${innerShift}px),0)`;
-    const dotScale = (1 + (sceneScale - 1) * .2) / sceneScale;
+    const dotGrowth = 1 + (sceneScale - 1) * .2;
+    // Counter-scale the texture layer so the scene zoom does not shrink
+    // points into sub-pixels. Only the spacing grows (20% of scene zoom),
+    // while each point remains a stable 1px mark in the final image.
+    const dotScale = 1 / sceneScale;
+    dotField.style.setProperty('--dot-radius', '1px');
+    dotField.style.setProperty('--dot-spacing', `${(12 * dotGrowth).toFixed(3)}px`);
     dotField.style.transform = `translate3d(-50%,-50%,0) scale(${dotScale.toFixed(4)})`;
-    title.style.transform = `translate3d(0,${titleOuterShift - innerShift}px,0)`;
-    title.style.opacity = clamp(1 - expansionProgress * .95 - fadeProgress).toFixed(3);
+    title.style.opacity = '1';
     scene.style.transform = `scale(${sceneScale})`;
-    updateWorkSpread(expansionProgress);
+    updateWorkTypeOffset(titleOuterShift);
+    updateWorkTypeClip(sceneScale, innerShift);
+    updateWorkSpread(expansionProgress, typeSize);
     updateWorkAperture();
   }
 
@@ -596,10 +683,9 @@
     const entryProgress = clamp(1 - rect.top / Math.max(state.height, 1));
     const postDistance = Math.max(0, -rect.top - workAnchorBuffer);
     const expansionProgress = clamp(postDistance / Math.max(workTimelineState.expansion, 1));
-    const fadeProgress = clamp((postDistance - workTimelineState.expansion) / Math.max(workTimelineState.fade, 1));
-    const mediaDistance = Math.max(0, postDistance - workTimelineState.expansion - workTimelineState.fade);
+    const mediaDistance = Math.max(0, postDistance - workTimelineState.expansion - workTimelineState.hold);
     const mediaProgress = clamp(mediaDistance / Math.max(workTimelineState.media, 1));
-    updateWorkIntro(entryProgress, expansionProgress, fadeProgress, postDistance);
+    updateWorkIntro(entryProgress, expansionProgress, postDistance);
     document.querySelectorAll('.work-card').forEach((card, index) => {
       const segment = 1 / workItems.length;
       const center = (index + .5) * segment;
