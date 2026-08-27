@@ -3,7 +3,6 @@
   const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const state = { width: innerWidth, height: innerHeight, pointerX: .5, pointerY: .5, scrollY: 0, ticking: false };
-  const webgl = { renderer: null, scene: null, camera: null, meshes: [] };
   const workIntroState = { outer: null, inner: null, dotField: null, title: null, typeLayer: null, typeInnerMask: null, scene: null, spread: null, measured: false, coverScale: 1, cloneCount: 0 };
   const workAnchorBuffer = 5;
   const workInnerSpeed = .8;
@@ -17,10 +16,14 @@
   const workInnerArcRatio = .065;
   const workExpansionScreens = 3;
   const workHoldScreens = .35;
-  const workCardScreens = .6;
+  const workCardTravelScreens = 1.2;
+  const workCardStaggerScreens = workCardTravelScreens / 2;
+  const workCardEdgeRatio = .2;
+  const workCardMiddleRatio = .6;
+  const workCardMiddleSpeed = .45;
+  const workCardPerspectiveDegrees = 11;
   const workCardTailScreens = .35;
   const workCollapseScreens = workExpansionScreens;
-  const workFinalCardExitLocal = 2.4;
   const workTimelineState = { expansion: 0, hold: 0, media: 0, cardTail: 0, collapse: 0, total: 0 };
   const paperPalette = ['#e1cab8', '#f40c3f', '#fff2ed'];
   let paperThemeIndex = 0;
@@ -331,7 +334,7 @@
       const card = document.createElement('a');
       card.className = 'work-card'; card.href = href; card.target = href === '#' ? '_self' : '_blank'; card.rel = 'noreferrer';
       card.dataset.index = index; card.setAttribute('aria-hidden', 'true');
-      card.innerHTML = `<video data-src="./assets/wodniack/videos/${file}" width="1082" height="636" muted loop playsinline preload="none"></video><footer><span>${file.split('.')[0]}</span><span>${String(index + 1).padStart(2, '0')}—${String(9321 + index * 137).slice(-6)}</span></footer>`;
+      card.innerHTML = `<div class="work-card-screen" aria-hidden="true"></div><footer><span>${file.split('.')[0]}</span><span>${String(index + 1).padStart(2, '0')}—${String(9321 + index * 137).slice(-6)}</span></footer>`;
       host.append(card);
     });
   }
@@ -365,28 +368,6 @@
       host.append(row);
     });
     workIntroState.cloneCount = copyCount;
-  }
-
-  function initWorkWebGL() {
-    if (!window.THREE) return;
-    try {
-      webgl.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' });
-      webgl.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-      webgl.renderer.domElement.className = 'work-webgl';
-      $('.work-stage').insertBefore(webgl.renderer.domElement, $('.work-media'));
-      webgl.scene = new THREE.Scene();
-      webgl.camera = new THREE.OrthographicCamera(-state.width / 2, state.width / 2, state.height / 2, -state.height / 2, .1, 1000);
-      webgl.camera.position.z = 100;
-      document.querySelectorAll('.work-card').forEach(card => {
-        const material = new THREE.MeshBasicMaterial({ color: 0x241d24, transparent: true });
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
-        mesh.visible = false; mesh.renderOrder = Number(card.dataset.index);
-        webgl.scene.add(mesh); webgl.meshes.push(mesh); card._mesh = mesh;
-      });
-      document.body.classList.add('has-webgl');
-    } catch (error) {
-      webgl.renderer = null;
-    }
   }
 
   function buildMemories() {
@@ -446,28 +427,10 @@
     fitHeroTitle();
     measureWorkIntro();
     measureWorkTimeline();
-    if (webgl.renderer) {
-      webgl.renderer.setSize(state.width, state.height, false);
-      Object.assign(webgl.camera, { left: -state.width / 2, right: state.width / 2, top: state.height / 2, bottom: -state.height / 2 });
-      webgl.camera.updateProjectionMatrix();
-    }
     const contact = $('.contact');
     $('.contact-grid').setAttribute('viewBox', `0 0 ${contact.clientWidth} ${contact.clientHeight}`);
     $('.contact-grid path').setAttribute('d', gridPath(contact.clientWidth, contact.clientHeight, .28));
     updateScroll();
-  }
-
-  function ensureVideo(card) {
-    const video = $('video', card);
-    if (!video.src) { video.src = video.dataset.src; video.load(); }
-    if (card._mesh && !card._mesh.userData.videoTexture) {
-      const texture = new THREE.VideoTexture(video);
-      texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter;
-      card._mesh.material.map = texture; card._mesh.material.color.set(0xffffff); card._mesh.material.needsUpdate = true;
-      card._mesh.userData.videoTexture = texture;
-    }
-    if (reducedMotion) { video.pause(); return; }
-    const promise = video.play(); if (promise) promise.catch(() => {});
   }
 
   function measureWorkIntro() {
@@ -502,7 +465,7 @@
     if (!section) return;
     workTimelineState.expansion = state.height * workExpansionScreens;
     workTimelineState.hold = state.height * workHoldScreens;
-    workTimelineState.media = state.height * workItems.length * workCardScreens;
+    workTimelineState.media = state.height * (workCardTravelScreens + (workItems.length - 1) * workCardStaggerScreens);
     workTimelineState.cardTail = state.height * workCardTailScreens;
     workTimelineState.collapse = state.height * workCollapseScreens;
     workTimelineState.total = workAnchorBuffer + workTimelineState.expansion + workTimelineState.hold + workTimelineState.media + workTimelineState.cardTail + workTimelineState.collapse;
@@ -710,15 +673,38 @@
     updateWorkAperture();
   }
 
+  function getWorkCardTravelProgress(progress) {
+    const value = clamp(progress);
+    const edge = workCardEdgeRatio;
+    const middleEnd = edge + workCardMiddleRatio;
+    const middleDistance = workCardMiddleRatio * workCardMiddleSpeed;
+    const edgeDistance = (1 - middleDistance) / 2;
+    if (value < edge) {
+      const phase = value / edge;
+      const phase3 = phase * phase * phase;
+      const phase4 = phase3 * phase;
+      const edgeSpeed = edgeDistance * 2 / edge - workCardMiddleSpeed;
+      const speedBlendIntegral = phase3 - phase4 * .5;
+      return edge * (edgeSpeed * phase + (workCardMiddleSpeed - edgeSpeed) * speedBlendIntegral);
+    }
+    if (value <= middleEnd) return edgeDistance + (value - edge) * workCardMiddleSpeed;
+    return 1 - getWorkCardTravelProgress(1 - value);
+  }
+
+  function getWorkCardReveal(progress) {
+    const enter = clamp(progress / workCardEdgeRatio);
+    const exit = clamp((1 - progress) / workCardEdgeRatio);
+    const smooth = value => value * value * (3 - 2 * value);
+    return Math.min(smooth(enter), smooth(exit));
+  }
+
   function updateWork() {
     const section = $('.work'); const rect = section.getBoundingClientRect();
     const entryProgress = clamp(1 - rect.top / Math.max(state.height, 1));
     const postDistance = Math.max(0, -rect.top - workAnchorBuffer);
     const expansionProgress = clamp(postDistance / Math.max(workTimelineState.expansion, 1));
     const mediaDistance = Math.max(0, postDistance - workTimelineState.expansion - workTimelineState.hold);
-    const mediaProgress = clamp(mediaDistance / Math.max(workTimelineState.media, 1));
     const cardTailDistance = Math.max(0, mediaDistance - workTimelineState.media);
-    const cardTailProgress = clamp(cardTailDistance / Math.max(workTimelineState.cardTail, 1));
     const collapseDistance = Math.max(0, cardTailDistance - workTimelineState.cardTail);
     const collapseProgress = clamp(collapseDistance / Math.max(workTimelineState.collapse, 1));
     const visualExpansionProgress = expansionProgress * (1 - collapseProgress);
@@ -729,37 +715,50 @@
     );
     const exitDistance = Math.max(0, postDistance - workTimelineState.total);
     const exitProgress = clamp(exitDistance / Math.max(state.height, 1));
-    const finalCardIndex = workItems.length - 1;
-    const finalCardProgress = (finalCardIndex + .5) / workItems.length;
-    const finalCardExitProgress = finalCardProgress + 1 / workItems.length * .42 * workFinalCardExitLocal;
-    const cardProgress = mediaProgress + (finalCardExitProgress - mediaProgress) * cardTailProgress;
     updateWorkIntro(entryProgress, visualExpansionProgress, postDistance, loopDistance, collapseProgress, exitProgress);
-    document.querySelectorAll('.work-card').forEach((card, index) => {
-      const segment = 1 / workItems.length;
-      const center = (index + .5) * segment;
-      const local = (cardProgress - center) / (segment * .42);
-      const isFinalCardExiting = index === finalCardIndex && cardTailProgress > 0 && collapseProgress === 0;
-      const isInMediaWindow = cardTailProgress === 0 && mediaProgress >= index * segment && mediaProgress <= (index + 1) * segment;
-      const visible = mediaDistance > 0 && (isFinalCardExiting || isInMediaWindow);
-      if (visible) ensureVideo(card);
-      const direction = index % 2 ? 1 : -1;
-      const seedX = seeded(index + 10) * 62 - 31; const seedY = seeded(index + 70) * 48 - 24;
-      const x = seedX + local * direction * (28 + seeded(index + 90) * 19);
-      const y = seedY + Math.sin(local * 1.6 + index) * 8;
-      const scale = .54 + clamp(1 - Math.abs(local) / 2.05) * (.34 + seeded(index + 120) * .25);
-      const rotate = (seeded(index + 150) * 10 - 5) + local * direction * 2.2;
-      card.style.opacity = visible ? clamp(1.25 - Math.abs(local) / 1.65).toFixed(3) : '0';
-      card.style.zIndex = String(20 + Math.round((1 - Math.abs(local) / 2) * 50));
-      card.style.transform = `translate3d(calc(-50% + ${x}vw),calc(-50% + ${y}vh),0) rotate(${rotate}deg) scale(${scale})`;
-      card.setAttribute('aria-hidden', visible ? 'false' : 'true');
-      if (card._mesh) {
-        const width = card.offsetWidth - 12, height = width * 636 / 1082;
-        card._mesh.visible = visible; card._mesh.position.set(x * state.width / 100, -y * state.height / 100 + 12 * scale, index / 100);
-        card._mesh.rotation.z = -rotate * Math.PI / 180; card._mesh.scale.set(width * scale, height * scale, 1);
-        card._mesh.material.opacity = visible ? Number(card.style.opacity) : 0;
-      }
+    const cardTravelDistance = Math.max(state.height * workCardTravelScreens, 1);
+    const cardStaggerDistance = state.height * workCardStaggerScreens;
+    const rowOffset = state.width <= 900 ? 14 : 21;
+    const cardStates = [...document.querySelectorAll('.work-card')].map((card, index) => {
+      const local = (mediaDistance - index * cardStaggerDistance) / cardTravelDistance;
+      const visible = mediaDistance > 0 && local >= 0 && local < 1;
+      const progress = clamp(local);
+      const travel = getWorkCardTravelProgress(progress);
+      const reveal = getWorkCardReveal(progress);
+      const extent = 56 + card.offsetWidth / Math.max(state.width, 1) * 50;
+      return {
+        card,
+        index,
+        visible,
+        reveal,
+        extent,
+        x: extent * (1 - travel * 2),
+        y: index % 2 ? rowOffset : -rowOffset,
+        scale: .9 + reveal * .1
+      };
     });
-    if (webgl.renderer && reducedMotion) webgl.renderer.render(webgl.scene, webgl.camera);
+    const visibleStates = cardStates.filter(cardState => cardState.visible);
+    if (visibleStates.length === 2) {
+      const [older, newer] = visibleStates;
+      const minimumGap = Math.max(24, Math.max(older.card.offsetWidth, newer.card.offsetWidth) / Math.max(state.width, 1) * 60);
+      const gap = newer.x - older.x;
+      if (gap < minimumGap) {
+        const correction = (minimumGap - gap) / 2;
+        older.x -= correction;
+        newer.x += correction;
+      }
+    }
+    cardStates.forEach(({ card, index, visible, reveal, extent, x, y, scale }) => {
+      const horizontalProgress = clamp(x / Math.max(extent, 1), -1, 1);
+      const verticalProgress = clamp(y / Math.max(rowOffset, 1), -1, 1);
+      const perspectiveStrength = horizontalProgress * horizontalProgress;
+      const perspectiveRotateX = verticalProgress * perspectiveStrength * workCardPerspectiveDegrees;
+      const perspectiveRotateY = -horizontalProgress * workCardPerspectiveDegrees;
+      card.style.opacity = visible ? '1' : '0';
+      card.style.zIndex = String(20 + Math.round(reveal * 50));
+      card.style.transform = `translate3d(calc(-50% + ${x}vw),calc(-50% + ${y}vh),0) rotateY(${perspectiveRotateY}deg) rotateX(${perspectiveRotateX}deg) scale(${scale})`;
+      card.setAttribute('aria-hidden', visible ? 'false' : 'true');
+    });
   }
 
   function updateAboutBlock() {
@@ -917,5 +916,5 @@
     contrast.addEventListener('click', () => applyPaperTheme(paperThemeIndex + 1));
   }
 
-  buildData(); buildWork(); initWorkWebGL(); buildMemories(); bind(); resize(); initHeroLetterMotion();
+  buildData(); buildWork(); buildMemories(); bind(); resize(); initHeroLetterMotion();
 })();
