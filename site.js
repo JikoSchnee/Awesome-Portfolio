@@ -27,11 +27,10 @@
   const workTimelineState = { expansion: 0, hold: 0, media: 0, cardTail: 0, collapse: 0, total: 0 };
   const paperPalette = ['#e1cab8', '#f40c3f', '#fff2ed'];
   const memorySpawnSequence = ['photo', 'photo', 'photo', 'photo', 'star', 'photo', 'photo', 'photo', 'star'];
-  const memoryDirections = [-2.64, -2.05, -1.38, -.72, -.16, .48, 1.05, 1.69, 2.27, 2.84];
-  const memorySpawnInterval = 1600;
-  const memoryLifetimeMin = 5600;
-  const memoryLifetimeMax = 7200;
-  const memoryScene = { section: null, host: null, smiley: null, slots: [], smileyVisible: false, nextSpawnAt: 0, sequenceIndex: 0, photoIndex: 0, serial: 0, frame: 0, renderer: null, scene: null, camera: null, canvas: null, textures: new Map(), worldPerPixel: 1, spawnOrigin: { x: 0, y: 0 }, size: { width: 0, height: 0 } };
+  const memorySpawnInterval = 900;
+  const memoryLifetimeMin = 7500;
+  const memoryLifetimeMax = 9000;
+  const memoryScene = { section: null, host: null, smiley: null, slots: [], smileyVisible: false, nextSpawnAt: 0, sequenceIndex: 0, photoIndex: 0, serial: 0, frame: 0, renderer: null, scene: null, camera: null, canvas: null, textures: new Map(), worldPerPixel: 1, spawnOrigin: { x: 0, y: 0 }, smileyDocumentCenter: { x: 0, y: 0 }, size: { width: 0, height: 0 }, frustum: null, viewProjectionMatrix: null, bounds: null };
   let paperThemeIndex = 0;
 
   class Noise {
@@ -394,6 +393,9 @@
     memoryScene.host = host;
     memoryScene.section = section;
     memoryScene.smiley = smiley;
+    // `perspective` on the scene creates a containing block for fixed children.
+    // Portal the canvas to the document root so it can cover subsequent sections.
+    document.body.append(host);
     host.replaceChildren();
     if (reducedMotion || !window.THREE) return;
     const T = window.THREE;
@@ -414,6 +416,9 @@
     memoryScene.scene = new T.Scene();
     memoryScene.camera = new T.PerspectiveCamera(38, 1, 1, 2600);
     memoryScene.camera.position.z = 900;
+    memoryScene.frustum = new T.Frustum();
+    memoryScene.viewProjectionMatrix = new T.Matrix4();
+    memoryScene.bounds = new T.Box3();
     memoryScene.scene.add(new T.HemisphereLight(0xfff2ed, 0x160000, 2.25));
     const keyLight = new T.DirectionalLight(0xffffff, 2.4);
     keyLight.position.set(-300, 420, 720);
@@ -422,7 +427,7 @@
     rimLight.position.set(280, -120, 420);
     memoryScene.scene.add(rimLight);
     preloadMemoryTextures();
-    memoryScene.slots = Array.from({ length: 5 }, () => {
+    memoryScene.slots = Array.from({ length: 10 }, () => {
       return { startedAt: 0, flight: null, kind: null, file: null, model: null };
     });
     resizeMemoryScene();
@@ -443,23 +448,73 @@
   }
 
   function resizeMemoryScene() {
-    const { section, renderer, camera } = memoryScene;
-    if (!section || !renderer || !camera) return;
-    const width = Math.max(section.clientWidth, 1);
-    const height = Math.max(section.clientHeight, 1);
+    const { host, renderer, camera } = memoryScene;
+    if (!host || !renderer || !camera) return;
+    const width = Math.max(host.clientWidth, 1);
+    const height = Math.max(host.clientHeight, 1);
     memoryScene.size.width = width;
     memoryScene.size.height = height;
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     memoryScene.worldPerPixel = 2 * camera.position.z * Math.tan(camera.fov * Math.PI / 360) / height;
-    const canvasRect = memoryScene.canvas.getBoundingClientRect();
-    const smileyRect = memoryScene.smiley.getBoundingClientRect();
-    const smileyCenterX = smileyRect.left + smileyRect.width / 2 - canvasRect.left;
-    const smileyCenterY = smileyRect.top + smileyRect.height / 2 - canvasRect.top;
-    memoryScene.spawnOrigin.x = (smileyCenterX - width / 2) * memoryScene.worldPerPixel;
-    memoryScene.spawnOrigin.y = (height / 2 - smileyCenterY) * memoryScene.worldPerPixel;
+    measureMemorySpawnOrigin();
     renderer.render(memoryScene.scene, camera);
+  }
+
+  function measureMemoryRays() {
+    const { section, smiley } = memoryScene;
+    if (!section || !smiley) return;
+    const layer = $('.my-way-lines', section);
+    if (!layer) return;
+    const sectionRect = section.getBoundingClientRect();
+    const smileyRect = smiley.getBoundingClientRect();
+    const centerX = smileyRect.left + smileyRect.width / 2 - sectionRect.left;
+    const centerY = smileyRect.top + smileyRect.height / 2 - sectionRect.top;
+    const width = sectionRect.width;
+    const height = sectionRect.height;
+    const spacing = 96;
+    const horizontalSteps = Math.max(2, Math.round(width / spacing));
+    const verticalSteps = Math.max(2, Math.round(height / spacing));
+    const segments = [];
+    const addRay = (x, y) => segments.push(`M${centerX.toFixed(2)} ${centerY.toFixed(2)}L${x.toFixed(2)} ${y.toFixed(2)}`);
+    for (let index = 0; index <= horizontalSteps; index += 1) {
+      const x = width * index / horizontalSteps;
+      addRay(x, 0);
+      addRay(x, height);
+    }
+    for (let index = 1; index < verticalSteps; index += 1) {
+      const y = height * index / verticalSteps;
+      addRay(0, y);
+      addRay(width, y);
+    }
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', segments.join(''));
+    svg.append(path);
+    layer.replaceChildren(svg);
+  }
+
+  function measureMemorySpawnOrigin() {
+    const { canvas, smiley } = memoryScene;
+    if (!canvas || !smiley) return;
+    const smileyRect = memoryScene.smiley.getBoundingClientRect();
+    memoryScene.smileyDocumentCenter.x = smileyRect.left + smileyRect.width / 2 + scrollX;
+    memoryScene.smileyDocumentCenter.y = smileyRect.top + smileyRect.height / 2 + scrollY;
+    updateMemorySpawnOrigin();
+  }
+
+  function updateMemorySpawnOrigin() {
+    const { canvas, size, worldPerPixel, smileyDocumentCenter } = memoryScene;
+    if (!canvas) return;
+    const canvasRect = canvas.getBoundingClientRect();
+    const smileyCenterX = smileyDocumentCenter.x - scrollX - canvasRect.left;
+    const smileyCenterY = smileyDocumentCenter.y - scrollY - canvasRect.top;
+    memoryScene.spawnOrigin.x = (smileyCenterX - size.width / 2) * worldPerPixel;
+    memoryScene.spawnOrigin.y = (size.height / 2 - smileyCenterY) * worldPerPixel;
   }
 
   function preloadMemoryTextures() {
@@ -541,9 +596,7 @@
         bevelThickness: 1.5 * pixelScale
       });
       geometry.center();
-      const edge = new T.MeshStandardMaterial({ color: paper, roughness: .52, metalness: .08 });
-      const face = new T.MeshStandardMaterial({ color: ink, roughness: .38, metalness: .18 });
-      root.add(new T.Mesh(geometry, [edge, face]));
+      root.add(new T.Mesh(geometry, new T.MeshBasicMaterial({ color: 0x000000 })));
       return root;
     }
     const texture = memoryScene.textures.get(file);
@@ -555,8 +608,11 @@
     const front = new T.MeshStandardMaterial({ color: texture ? 0xffffff : paper, map: texture || null, roughness: .72, metalness: 0 });
     const card = new T.Mesh(new T.BoxGeometry(width, height, thickness), [edge, edge, edge, edge, front, edge]);
     root.userData.photoMaterial = front;
+    // Keep the complete card (image plus caption) centered on the group origin.
+    // That origin is positioned at the smiley's exact center when the flight begins.
+    card.position.y = 14 * pixelScale;
     root.add(card);
-    const captionMesh = makeCaptionMesh(caption, width, pixelScale, ink, paper, height / 2 + 14 * pixelScale, thickness);
+    const captionMesh = makeCaptionMesh(caption, width, pixelScale, ink, paper, height / 2, thickness);
     root.add(captionMesh.mesh);
     return root;
   }
@@ -597,39 +653,72 @@
     slot.kind = kind;
     slot.file = file;
     const variation = seeded(serial + 500);
+    const T = window.THREE;
+    const spinAxis = new T.Vector3(
+      seeded(serial + 560) * 2 - 1,
+      seeded(serial + 580) * 2 - 1,
+      seeded(serial + 600) * 2 - 1
+    ).normalize();
     slot.flight = {
-      angle: memoryDirections[serial % memoryDirections.length] + (seeded(serial + 520) - .5) * .18,
+      angle: Math.random() * Math.PI * 2,
       duration: memoryLifetimeMin + seeded(serial + 620) * (memoryLifetimeMax - memoryLifetimeMin),
       distance: Math.hypot(state.width, state.height) * (1.13 + variation * .24),
-      rotation: seeded(serial + 540) * .72 - .36,
-      spinX: (seeded(serial + 560) * 2 - 1) * (kind === 'star' ? 7.5 : 4.4),
-      spinY: (seeded(serial + 580) * 2 - 1) * (kind === 'star' ? 8.4 : 5.1),
-      spinZ: (seeded(serial + 600) * 2 - 1) * (kind === 'star' ? 6.6 : 3.8),
-      scale: kind === 'star' ? 3 + variation * 4 : 8 + variation * 8
+      baseRotation: new T.Quaternion().setFromEuler(new T.Euler(
+        seeded(serial + 540) * .72 - .36,
+        seeded(serial + 550) * .72 - .36,
+        seeded(serial + 555) * .72 - .36
+      )),
+      spinAxis,
+      spinSpeed: (kind === 'star' ? 15 : 10) * (.72 + seeded(serial + 570) * .56),
+      spinQuaternion: new T.Quaternion(),
+      scale: kind === 'star' ? 3 + variation * 4 : 6 + variation * 3
     };
     slot.startedAt = time;
+    paintMemory(slot, 0);
   }
 
   function paintMemory(slot, progress) {
     const { model, flight } = slot;
     if (!model || !flight) return;
-    const travel = Math.pow(progress, 1.58);
-    const depth = progress * progress;
+    const approach = clamp(progress);
+    // One continuous ease-in curve: slow at the vanishing point, faster as it exits.
+    // It remains unbounded after progress 1 so off-screen models can finish leaving.
+    const travel = Math.pow(Math.max(progress, 0), 1.8);
+    const depth = approach * approach;
     const pixelScale = memoryScene.worldPerPixel;
-    const x = memoryScene.spawnOrigin.x + Math.cos(flight.angle) * flight.distance * travel * pixelScale;
-    const y = memoryScene.spawnOrigin.y - Math.sin(flight.angle) * flight.distance * travel * pixelScale;
+    const z = -520 + depth * 810;
+    const origin = memoryScene.spawnOrigin;
+    const projectedX = origin.x + Math.cos(flight.angle) * flight.distance * travel * pixelScale;
+    const projectedY = origin.y - Math.sin(flight.angle) * flight.distance * travel * pixelScale;
+    // Convert the intended screen-space path back into world space at this depth.
+    // This keeps progress 0 exactly on the radiating-lines intersection, rather
+    // than letting a distant model visually drift toward the canvas center.
+    const depthCompensation = (memoryScene.camera.position.z - z) / memoryScene.camera.position.z;
+    const x = projectedX * depthCompensation;
+    const y = projectedY * depthCompensation;
     const scale = (.055 + depth * flight.scale) * (pixelScale / model.userData.pixelScale);
-    model.position.set(x, y, -520 + depth * 810);
+    model.position.set(x, y, z);
     model.scale.setScalar(scale);
-    model.rotation.set(
-      flight.rotation + progress * flight.spinX,
-      flight.rotation * .7 + progress * flight.spinY,
-      flight.rotation + progress * flight.spinZ
-    );
+    flight.spinQuaternion.setFromAxisAngle(flight.spinAxis, progress * flight.spinSpeed);
+    model.quaternion.copy(flight.baseRotation).multiply(flight.spinQuaternion);
+  }
+
+  function isMemoryVisible(model) {
+    const { camera, frustum, viewProjectionMatrix, bounds } = memoryScene;
+    if (!model || !camera || !frustum || !viewProjectionMatrix || !bounds) return false;
+    model.updateMatrixWorld(true);
+    camera.updateMatrixWorld();
+    viewProjectionMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    frustum.setFromProjectionMatrix(viewProjectionMatrix);
+    bounds.setFromObject(model);
+    return frustum.intersectsBox(bounds);
   }
 
   function updateMemoryFlight(time) {
     memoryScene.frame = 0;
+    // The overlay is fixed, but the flight paths live in the smiley's frame of reference.
+    // Use document coordinates plus the current scroll position to avoid layout-read lag.
+    updateMemorySpawnOrigin();
     if (memoryScene.smileyVisible && time >= memoryScene.nextSpawnAt) {
       const freeSlot = memoryScene.slots.find(slot => !slot.startedAt);
       if (freeSlot) {
@@ -643,7 +732,8 @@
     memoryScene.slots.forEach(slot => {
       if (!slot.startedAt) return;
       const progress = (time - slot.startedAt) / slot.flight.duration;
-      if (progress >= 1) {
+      paintMemory(slot, Math.max(progress, 0));
+      if (!isMemoryVisible(slot.model)) {
         disposeMemoryModel(slot.model);
         slot.startedAt = 0;
         slot.flight = null;
@@ -653,7 +743,6 @@
         return;
       }
       hasFlyingObjects = true;
-      paintMemory(slot, clamp(progress));
     });
     memoryScene.renderer?.render(memoryScene.scene, memoryScene.camera);
     if (memoryScene.smileyVisible || hasFlyingObjects) requestMemoryFrame();
@@ -710,6 +799,7 @@
     const contact = $('.contact');
     $('.contact-grid').setAttribute('viewBox', `0 0 ${contact.clientWidth} ${contact.clientHeight}`);
     $('.contact-grid path').setAttribute('d', gridPath(contact.clientWidth, contact.clientHeight, .28));
+    measureMemoryRays();
     resizeMemoryScene();
     updateScroll();
   }

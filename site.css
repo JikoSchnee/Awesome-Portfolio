@@ -89,9 +89,13 @@ a-waves path{fill:none;stroke:var(--ink);stroke-width:1px;vector-effect:non-scal
 .work-card[aria-hidden="true"]{pointer-events:none}
 
 .my-way{--vanishing-y:35%;height:130vh;min-height:850px;position:relative;overflow:hidden;background:var(--paper);transition:background-color .5s ease;perspective:1100px;border-top:var(--line) solid var(--ink);isolation:isolate}
-.my-way-lines{position:absolute;inset:0;z-index:0;background:repeating-conic-gradient(from 90deg at 50% var(--vanishing-y),transparent 0 3deg,var(--ink) 3deg 3.08deg);opacity:.58}
-.my-way-smiley{position:absolute;width:10vw;min-width:88px;max-width:150px;left:50%;top:var(--vanishing-y);z-index:8;transform:translate(-50%,-50%);transform-origin:center;animation:my-way-smiley-spin 7.5s linear infinite;will-change:transform;pointer-events:none}
-.memory-field{position:absolute;inset:0;z-index:10;pointer-events:none}
+.my-way-lines{position:absolute;inset:0;z-index:0;overflow:hidden;opacity:.58}
+.my-way-lines svg{display:block;width:100%;height:100%}
+.my-way-lines path{fill:none;stroke:var(--ink);stroke-width:1px;vector-effect:non-scaling-stroke}
+.my-way-smiley,.my-way-smiley-mask{position:absolute;width:10vw;min-width:88px;max-width:150px;aspect-ratio:1;left:50%;top:var(--vanishing-y);transform:translate(-50%,-50%);pointer-events:none}
+.my-way-smiley-mask{z-index:7;border-radius:50%;background:var(--paper)}
+.my-way-smiley{z-index:8;transform-origin:center;animation:my-way-smiley-spin 7.5s linear infinite;will-change:transform}
+.memory-field{position:fixed;inset:0;z-index:100;pointer-events:none}
 .memory-canvas{display:block;width:100%;height:100%;pointer-events:none}
 @keyframes my-way-smiley-spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
 
