@@ -41,8 +41,12 @@
   const memoryDissolveDuration = 900;
   const myWayRaySpacing = 96;
   const myWayFlatVerticalStretch = 1.8;
-  const myWayTypeParallaxSpeed = .6;
-  const myWayTypeStartOffset = -270;
+  const contactPortalOpenDuration = 720;
+  const contactPortalCloseDuration = 280;
+  const contactIdleRippleDuration = 2800;
+  const contactIdleRippleCycle = 6200;
+  let myWayTypeParallaxSpeed = 1.8;
+  let myWayTypeStartOffset = 160;
   const memoryScene = {
     section: null, host: null, smiley: null, slots: [], smileyVisible: false,
     nextSpawnAt: 0, sequenceIndex: 0, photoIndex: 0, serial: 0, frame: 0,
@@ -54,7 +58,14 @@
     capacity: memoryMaximumSlots, spawnInterval: memorySpawnIntervalMin,
     lastFrameAt: 0, suppressClickUntil: 0
   };
-  const myWayTypeState = { section: null, contact: null, source: null, flat: null, sourceYear: null, plane: null };
+  const myWayTypeState = { section: null, contact: null, source: null, flat: null, sourceYear: null, flatYear: null, plane: null };
+  const contactPortalState = {
+    section: null, stage: null, hit: null, grid: null, progress: 0, visualProgress: 0, target: 0, frame: 0,
+    motionStartedAt: 0, motionDuration: 0, motionFrom: 0, motionVisualFrom: 0, motionOpening: false,
+    idleRippleProgress: 0, idleRippleFrame: 0, idleRippleStartedAt: 0, idleRippleVisible: false,
+    pointerInside: false, focusInside: false, touchExpanded: false, controlActive: false,
+    acceleration: 3, spring: 50, gridRange: 360, rippleThickness: 30, rippleSpeed: 1.5, springTime: 560, reboundTime: 900, visual: null, sizeInput: null, sizeOutput: null, geometry: null
+  };
   let paperThemeIndex = 0;
 
   class Noise {
@@ -493,6 +504,60 @@
     myWayTypeState.source = source;
     myWayTypeState.flat = flat;
     myWayTypeState.sourceYear = $('.my-way-type-line--year', source);
+    myWayTypeState.flatYear = $('.my-way-type-line--year', flat);
+  }
+
+  function buildMyWayStretchControl() {
+    const stretchInput = $('#my-way-stretch');
+    const stretchOutput = $('#my-way-stretch-value');
+    const gapInput = $('#my-way-line-gap');
+    const gapOutput = $('#my-way-line-gap-value');
+    const speedInput = $('#my-way-speed');
+    const speedOutput = $('#my-way-speed-value');
+    const startInput = $('#my-way-start');
+    const startOutput = $('#my-way-start-value');
+    if (!stretchInput || !stretchOutput || !gapInput || !gapOutput || !speedInput || !speedOutput || !startInput || !startOutput) return;
+    const syncStretch = () => {
+      const percent = clamp(Number(stretchInput.value) || 260, 60, 260);
+      stretchOutput.value = `${percent}%`;
+      stretchOutput.textContent = `${percent}%`;
+      myWayTypeState.source?.style.setProperty('--my-way-copy-stretch', (percent / 100).toFixed(5));
+      myWayTypeState.flat?.style.removeProperty('--my-way-copy-stretch');
+      updateMyWayType();
+    };
+    const syncGap = () => {
+      const requestedPixels = Number(gapInput.value);
+      const pixels = clamp(Number.isFinite(requestedPixels) ? requestedPixels : 60, 0, 80);
+      gapOutput.value = `${pixels}PX`;
+      gapOutput.textContent = `${pixels}PX`;
+      myWayTypeState.source?.style.setProperty('--my-way-line-gap', `${pixels}px`);
+      myWayTypeState.flat?.style.setProperty('--my-way-line-gap', `${pixels}px`);
+      updateMyWayType();
+    };
+    const syncSpeed = () => {
+      const requestedPercent = Number(speedInput.value);
+      const percent = clamp(Number.isFinite(requestedPercent) ? requestedPercent : 180, 0, 300);
+      myWayTypeParallaxSpeed = percent / 100;
+      speedOutput.value = `${percent}%`;
+      speedOutput.textContent = `${percent}%`;
+      updateMyWayType();
+    };
+    const syncStart = () => {
+      const requestedPixels = Number(startInput.value);
+      const pixels = clamp(Number.isFinite(requestedPixels) ? requestedPixels : 160, -900, 300);
+      myWayTypeStartOffset = pixels;
+      startOutput.value = `${pixels}PX`;
+      startOutput.textContent = `${pixels}PX`;
+      updateMyWayType();
+    };
+    stretchInput.addEventListener('input', syncStretch);
+    gapInput.addEventListener('input', syncGap);
+    speedInput.addEventListener('input', syncSpeed);
+    startInput.addEventListener('input', syncStart);
+    syncStretch();
+    syncGap();
+    syncSpeed();
+    syncStart();
   }
 
   function updateMyWayType() {
@@ -505,15 +570,24 @@
     const screenShift = reducedMotion ? myWayTypeStartOffset : clamp(rawScreenShift, minScreenShift, maxScreenShift);
     let planeShift = screenShift;
     const plane = myWayTypeState.plane;
+    const sourceStretch = parseFloat(source.style.getPropertyValue('--my-way-copy-stretch')) || 1;
     if (!reducedMotion && plane?.anchorDepth != null) {
       const { perspective, sinAngle, visualDepth, anchorDepth } = plane;
-      const baseY = visualDepth * perspective / (perspective + anchorDepth * sinAngle);
+      const stretchedAnchorDepth = anchorDepth * sourceStretch;
+      const baseY = visualDepth * perspective / (perspective + stretchedAnchorDepth * sinAngle);
       const targetY = Math.max(1, baseY + screenShift);
       const targetDepth = (visualDepth * perspective / targetY - perspective) / sinAngle;
-      planeShift = anchorDepth - targetDepth;
+      planeShift = stretchedAnchorDepth - targetDepth;
     }
     source.style.setProperty('--my-way-type-shift', `${planeShift.toFixed(2)}px`);
-    flat.style.setProperty('--my-way-type-shift', `${planeShift.toFixed(2)}px`);
+    // At the fold, perspective scale is exactly 1. The source's stretched
+    // local depth is `sourceStretch * depth - planeShift`; therefore the glyph
+    // slice touching the fold is `planeShift / sourceStretch` from the bottom.
+    // Move the unstretched continuation by that same local depth. Its fixed
+    // outer scale remains untouched, so both copies meet on the identical
+    // outline while the lower screen keeps its existing vertical proportion.
+    const flatShift = planeShift / sourceStretch;
+    flat.style.setProperty('--my-way-type-shift', `${flatShift.toFixed(2)}px`);
   }
 
   function measureMyWayTextPlane() {
@@ -565,8 +639,9 @@
   function updateMyWayFlatScale() {
     const { flat, plane } = myWayTypeState;
     if (!flat || !plane) return;
-    const flatScaleY = plane.visualDepth * plane.sinAngle / plane.perspective * myWayFlatVerticalStretch;
-    flat.style.setProperty('--my-way-type-flat-scale-y', `${clamp(flatScaleY, .05, 2.5).toFixed(5)}`);
+    const rawFlatScaleY = plane.visualDepth * plane.sinAngle / plane.perspective * myWayFlatVerticalStretch;
+    plane.flatScaleY = clamp(rawFlatScaleY, .05, 2.5);
+    flat.style.setProperty('--my-way-type-flat-scale-y', `${plane.flatScaleY.toFixed(5)}`);
   }
 
   function measureMyWayType() {
@@ -606,33 +681,52 @@
     if (!section || !smiley) return;
     const layer = $('.my-way-lines', section);
     if (!layer) return;
-    const sectionRect = section.getBoundingClientRect();
+    const layerRect = layer.getBoundingClientRect();
     const smileyRect = smiley.getBoundingClientRect();
-    const centerX = smileyRect.left + smileyRect.width / 2 - sectionRect.left;
-    const centerY = smileyRect.top + smileyRect.height / 2 - sectionRect.top;
-    const width = sectionRect.width;
-    const height = sectionRect.height;
-    const horizontalSteps = getMyWayRayColumns(width);
-    const verticalSteps = Math.max(2, Math.round(height / myWayRaySpacing));
+    const centerX = smileyRect.left + smileyRect.width / 2 - layerRect.left;
+    const centerY = smileyRect.top + smileyRect.height / 2 - layerRect.top;
+    const width = layerRect.width;
+    const height = layerRect.height;
+    const spacing = width / getMyWayRayColumns(width);
+    // The section boundary is the text's perspective fold.  Its Contact-grid
+    // continuation begins in the next section, never inside My Way.
+    const frameLeft = .5;
+    const frameTop = .5;
+    const frameRight = width - .5;
+    const frameBottom = height - .5;
+    const gridStart = frameBottom;
+    const columns = distributedFrameCoordinates(frameLeft, frameRight, spacing);
+    const rows = distributedFrameCoordinates(frameTop, frameBottom, spacing);
     const segments = [];
-    const addRay = (x, y) => segments.push(`M${centerX.toFixed(2)} ${centerY.toFixed(2)}L${x.toFixed(2)} ${y.toFixed(2)}`);
-    for (let index = 0; index <= horizontalSteps; index += 1) {
-      const x = width * index / horizontalSteps;
-      addRay(x, 0);
-      addRay(x, height);
-    }
-    for (let index = 1; index < verticalSteps; index += 1) {
-      const y = height * index / verticalSteps;
-      addRay(0, y);
-      addRay(width, y);
-    }
+    const point = (x, y) => `${x.toFixed(2)} ${y.toFixed(2)}`;
+
+    // Perspective deck: every column terminates on an evenly-spaced grid
+    // intersection, so the fan remains centred on the same vertical axis as GO.
+    columns.forEach(x => {
+      segments.push(`M${point(centerX, centerY)}L${point(x, frameTop)}`);
+      segments.push(`M${point(centerX, centerY)}L${point(x, gridStart)}`);
+    });
+
+    // Mirror the same Contact cadence towards both side edges.  Corner rows
+    // are already represented by the vertical fan, so excluding them prevents
+    // a second path from darkening the two outermost diagonals.
+    rows.forEach(y => {
+      if (y <= frameTop || y >= frameBottom || Math.abs(y - centerY) < .5) return;
+      segments.push(`M${point(centerX, centerY)}L${point(frameLeft, y)}`);
+      segments.push(`M${point(centerX, centerY)}L${point(frameRight, y)}`);
+    });
+
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     svg.setAttribute('preserveAspectRatio', 'none');
     svg.setAttribute('aria-hidden', 'true');
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('class', 'my-way-rays');
     path.setAttribute('d', segments.join(''));
-    svg.append(path);
+    const frame = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    frame.setAttribute('class', 'my-way-frame');
+    frame.setAttribute('d', `M${frameLeft} ${frameTop}H${frameRight}V${frameBottom}H${frameLeft}Z`);
+    svg.append(path, frame);
     layer.replaceChildren(svg);
   }
 
@@ -1779,5 +1873,5 @@ if (gl_FragColor.a < .01) discard;
     contrast.addEventListener('click', () => applyPaperTheme(paperThemeIndex + 1));
   }
 
-  buildData(); buildWork(); buildMyWayType(); buildMemories(); bind(); resize(); initHeroLetterMotion();
+  buildData(); buildWork(); buildMyWayType(); buildMyWayStretchControl(); buildMemories(); bind(); resize(); initHeroLetterMotion();
 })();

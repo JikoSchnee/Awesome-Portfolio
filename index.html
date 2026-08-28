@@ -101,6 +101,16 @@
         </div>
         <span class="my-way-smiley-mask" aria-hidden="true"></span>
         <img class="my-way-smiley" src="./assets/wodniack/images/asset-smiley--main.svg" alt="" />
+        <div class="my-way-stretch-control" role="group" aria-label="My Way text controls">
+          <label for="my-way-stretch"><span>TYPE STRETCH</span><output id="my-way-stretch-value" for="my-way-stretch">260%</output></label>
+          <input id="my-way-stretch" type="range" min="60" max="260" step="1" value="260" aria-label="Adjust My Way text vertical stretch" />
+          <label for="my-way-line-gap"><span>LINE GAP</span><output id="my-way-line-gap-value" for="my-way-line-gap">60PX</output></label>
+          <input id="my-way-line-gap" type="range" min="0" max="80" step="1" value="60" aria-label="Adjust My Way text line gap" />
+          <label for="my-way-speed"><span>TYPE SPEED</span><output id="my-way-speed-value" for="my-way-speed">180%</output></label>
+          <input id="my-way-speed" type="range" min="0" max="300" step="1" value="180" aria-label="Adjust My Way text overall speed" />
+          <label for="my-way-start"><span>TYPE START</span><output id="my-way-start-value" for="my-way-start">160PX</output></label>
+          <input id="my-way-start" type="range" min="-900" max="300" step="1" value="160" aria-label="Adjust My Way text start offset" />
+        </div>
         <div class="memory-field" id="memory-field"></div>
       </section>
 
