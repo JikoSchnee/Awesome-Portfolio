@@ -687,7 +687,7 @@
     const centerY = smileyRect.top + smileyRect.height / 2 - layerRect.top;
     const width = layerRect.width;
     const height = layerRect.height;
-    const spacing = width / getMyWayRayColumns(width);
+    const spacing = getContactGridSpacing();
     // The section boundary is the text's perspective fold.  Its Contact-grid
     // continuation begins in the next section, never inside My Way.
     const frameLeft = .5;
@@ -1344,19 +1344,403 @@ if (gl_FragColor.a < .01) discard;
     return Math.max(2, Math.round(width / myWayRaySpacing));
   }
 
-  function gridPath(width, height) {
-    const cols = getMyWayRayColumns(width);
-    const rows = Math.max(2, Math.round(height / myWayRaySpacing));
-    let path = '';
-    for (let i = 0; i <= cols; i += 1) {
-      const x = i * width / cols;
-      path += `M${x} 0V${height}`;
+  function buildContactPortal() {
+    const section = $('.contact');
+    const stage = $('.contact-stage', section);
+    const hit = $('.contact-hit', section);
+    const grid = $('.contact-grid path', section);
+    const visual = $('.contact-portal', section);
+    const sizeInput = $('#portal-size', section);
+    const sizeOutput = $('#portal-size-value', section);
+    const accelerationInput = $('#portal-acceleration', section);
+    const accelerationOutput = $('#portal-acceleration-value', section);
+    const springInput = $('#portal-spring', section);
+    const springOutput = $('#portal-spring-value', section);
+    const gridRangeInput = $('#portal-grid-range', section);
+    const gridRangeOutput = $('#portal-grid-range-value', section);
+    const rippleThicknessInput = $('#portal-ripple-thickness', section);
+    const rippleThicknessOutput = $('#portal-ripple-thickness-value', section);
+    const rippleSpeedInput = $('#portal-ripple-speed', section);
+    const rippleSpeedOutput = $('#portal-ripple-speed-value', section);
+    const springTimeInput = $('#portal-spring-time', section);
+    const springTimeOutput = $('#portal-spring-time-value', section);
+    const reboundTimeInput = $('#portal-rebound-time', section);
+    const reboundTimeOutput = $('#portal-rebound-time-value', section);
+    const sizeControl = $('.contact-size-control', section);
+    if (!section || !stage || !hit || !grid || !visual || !sizeInput || !sizeOutput || !accelerationInput || !accelerationOutput || !springInput || !springOutput || !gridRangeInput || !gridRangeOutput || !rippleThicknessInput || !rippleThicknessOutput || !rippleSpeedInput || !rippleSpeedOutput || !springTimeInput || !springTimeOutput || !reboundTimeInput || !reboundTimeOutput || !sizeControl) return;
+    contactPortalState.section = section;
+    contactPortalState.stage = stage;
+    contactPortalState.hit = hit;
+    contactPortalState.grid = grid;
+    contactPortalState.visual = visual;
+    contactPortalState.sizeInput = sizeInput;
+    contactPortalState.sizeOutput = sizeOutput;
+    if (!reducedMotion) {
+      const observeRipple = entries => entries.forEach(entry => setContactIdleRippleVisibility(entry.isIntersecting));
+      if ('IntersectionObserver' in window) {
+        new IntersectionObserver(observeRipple, { threshold: .08 }).observe(stage);
+      } else {
+        setContactIdleRippleVisibility(true);
+      }
     }
-    for (let i = 0; i <= rows; i += 1) {
-      const y = i * height / rows;
-      path += `M0 ${y}H${width}`;
+    const hasFinePointer = () => matchMedia('(hover:hover) and (pointer:fine)').matches;
+    const sync = () => setContactPortalExpanded(
+      contactPortalState.pointerInside || contactPortalState.focusInside || contactPortalState.touchExpanded || contactPortalState.controlActive
+    );
+    hit.addEventListener('pointerenter', event => {
+      if (event.pointerType !== 'touch' && hasFinePointer()) { contactPortalState.pointerInside = true; sync(); }
+    });
+    hit.addEventListener('pointerleave', event => {
+      if (event.pointerType !== 'touch' && hasFinePointer()) { contactPortalState.pointerInside = false; sync(); }
+    });
+    hit.addEventListener('focus', () => { contactPortalState.focusInside = true; sync(); });
+    hit.addEventListener('blur', () => { contactPortalState.focusInside = false; sync(); });
+    sizeControl.addEventListener('pointerenter', () => { contactPortalState.controlActive = true; sync(); });
+    sizeControl.addEventListener('pointerleave', () => { contactPortalState.controlActive = false; sync(); });
+    sizeControl.addEventListener('focusin', () => { contactPortalState.controlActive = true; sync(); });
+    sizeControl.addEventListener('focusout', () => { contactPortalState.controlActive = false; sync(); });
+    sizeInput.addEventListener('input', () => setContactPortalSize(sizeInput.value));
+    accelerationInput.addEventListener('input', () => setContactPortalAcceleration(accelerationInput.value, accelerationOutput));
+    springInput.addEventListener('input', () => setContactPortalSpring(springInput.value, springOutput));
+    gridRangeInput.addEventListener('input', () => setContactPortalGridRange(gridRangeInput.value, gridRangeOutput));
+    rippleThicknessInput.addEventListener('input', () => setContactIdleRippleThickness(rippleThicknessInput.value, rippleThicknessOutput));
+    rippleSpeedInput.addEventListener('input', () => setContactIdleRippleSpeed(rippleSpeedInput.value, rippleSpeedOutput));
+    springTimeInput.addEventListener('input', () => setContactPortalSpringTime(springTimeInput.value, springTimeOutput));
+    reboundTimeInput.addEventListener('input', () => setContactPortalReboundTime(reboundTimeInput.value, reboundTimeOutput));
+    setContactPortalSize(sizeInput.value);
+    setContactPortalAcceleration(accelerationInput.value, accelerationOutput);
+    setContactPortalSpring(springInput.value, springOutput);
+    setContactPortalGridRange(gridRangeInput.value, gridRangeOutput);
+    setContactIdleRippleThickness(rippleThicknessInput.value, rippleThicknessOutput);
+    setContactIdleRippleSpeed(rippleSpeedInput.value, rippleSpeedOutput);
+    setContactPortalSpringTime(springTimeInput.value, springTimeOutput);
+    setContactPortalReboundTime(reboundTimeInput.value, reboundTimeOutput);
+    hit.addEventListener('click', event => {
+      if (!matchMedia('(pointer:coarse)').matches || event.detail === 0 || contactPortalState.touchExpanded) return;
+      event.preventDefault();
+      contactPortalState.touchExpanded = true;
+      sync();
+    });
+    document.addEventListener('pointerdown', event => {
+      if (!matchMedia('(pointer:coarse)').matches || hit.contains(event.target)) return;
+      contactPortalState.touchExpanded = false;
+      sync();
+    }, { passive: true });
+  }
+
+  function setContactPortalSize(value) {
+    const portal = contactPortalState;
+    const size = clamp(Number(value) || 40, 40, 76);
+    if (!portal.hit || !portal.sizeOutput) return;
+    portal.hit.style.setProperty('--portal-width', `${size}vw`);
+    portal.sizeOutput.value = `${size}VW`;
+    portal.sizeOutput.textContent = `${size}VW`;
+    measureContactPortal();
+  }
+
+  function setContactPortalAcceleration(value, output) {
+    const acceleration = clamp((Number(value) || 300) / 100, 1, 5);
+    contactPortalState.acceleration = acceleration;
+    if (!output) return;
+    output.value = `${acceleration.toFixed(2)}X`;
+    output.textContent = `${acceleration.toFixed(2)}X`;
+  }
+
+  function setContactPortalSpring(value, output) {
+    const requestedSpring = Number(value);
+    const spring = clamp(Number.isFinite(requestedSpring) ? requestedSpring : 50, 0, 100);
+    contactPortalState.spring = spring;
+    if (!output) return;
+    output.value = `${spring}%`;
+    output.textContent = `${spring}%`;
+  }
+
+  function setContactPortalGridRange(value, output) {
+    const requestedRange = Number(value);
+    const gridRange = clamp(Number.isFinite(requestedRange) ? requestedRange : 360, 100, 360);
+    contactPortalState.gridRange = gridRange;
+    if (output) {
+      output.value = `${gridRange}%`;
+      output.textContent = `${gridRange}%`;
+    }
+    renderContactGrid();
+  }
+
+  function setContactIdleRippleThickness(value, output) {
+    const requestedThickness = Number(value);
+    const thickness = clamp(Number.isFinite(requestedThickness) ? requestedThickness : 30, 5, 30);
+    contactPortalState.rippleThickness = thickness;
+    if (output) {
+      output.value = `${thickness}%`;
+      output.textContent = `${thickness}%`;
+    }
+    renderContactGrid();
+  }
+
+  function setContactIdleRippleSpeed(value, output) {
+    const speed = clamp((Number(value) || 150) / 100, .5, 2.4);
+    contactPortalState.rippleSpeed = speed;
+    if (!output) return;
+    output.value = `${speed.toFixed(2)}X`;
+    output.textContent = `${speed.toFixed(2)}X`;
+  }
+
+  function setContactPortalSpringTime(value, output) {
+    const requestedTime = Number(value);
+    const springTime = clamp(Number.isFinite(requestedTime) ? requestedTime : 560, 360, 620);
+    contactPortalState.springTime = springTime;
+    if (!output) return;
+    output.value = `${springTime}MS`;
+    output.textContent = `${springTime}MS`;
+  }
+
+  function setContactPortalReboundTime(value, output) {
+    const requestedTime = Number(value);
+    const reboundTime = clamp(Number.isFinite(requestedTime) ? requestedTime : 900, 80, 900);
+    contactPortalState.reboundTime = reboundTime;
+    if (!output) return;
+    output.value = `${reboundTime}MS`;
+    output.textContent = `${reboundTime}MS`;
+  }
+
+  function setContactPortalExpanded(expanded) {
+    const portal = contactPortalState;
+    if (!portal.hit) return;
+    const target = expanded ? 1 : 0;
+    if (portal.target === target && (portal.frame || portal.progress === target)) return;
+    portal.target = target;
+    if (expanded) portal.idleRippleProgress = 0;
+    portal.hit.classList.toggle('is-expanded', expanded);
+    if (reducedMotion) {
+      portal.progress = portal.target;
+      portal.visualProgress = portal.target;
+      renderContactPortalMotion();
+      renderContactGrid();
+      return;
+    }
+    portal.motionFrom = portal.progress;
+    portal.motionVisualFrom = portal.visualProgress;
+    portal.motionOpening = expanded;
+    portal.motionDuration = expanded
+      ? Math.max(contactPortalOpenDuration, portal.springTime + portal.reboundTime)
+      : contactPortalCloseDuration;
+    portal.motionStartedAt = performance.now();
+    if (!portal.frame) portal.frame = requestAnimationFrame(animateContactGrid);
+  }
+
+  function animateContactGrid(time) {
+    const portal = contactPortalState;
+    portal.frame = 0;
+    const duration = Math.max(portal.motionDuration, 1);
+    const elapsed = clamp((time - portal.motionStartedAt) / duration);
+    const gridCurve = portal.motionOpening ? contactPortalOpenCurve(elapsed) : easeOutCubic(elapsed);
+    const visualCurve = portal.motionOpening ? contactPortalVisualCurve(elapsed) : easeOutCubic(elapsed);
+    portal.progress = portal.motionFrom + (portal.target - portal.motionFrom) * gridCurve;
+    portal.visualProgress = portal.motionVisualFrom + (portal.target - portal.motionVisualFrom) * visualCurve;
+    if (elapsed === 1) {
+      portal.progress = portal.target;
+      portal.visualProgress = portal.target;
+    }
+    renderContactPortalMotion();
+    renderContactGrid();
+    if (elapsed < 1) portal.frame = requestAnimationFrame(animateContactGrid);
+  }
+
+  function setContactIdleRippleVisibility(visible) {
+    const portal = contactPortalState;
+    portal.idleRippleVisible = visible;
+    if (!visible) {
+      portal.idleRippleProgress = 0;
+      if (portal.idleRippleFrame) cancelAnimationFrame(portal.idleRippleFrame);
+      portal.idleRippleFrame = 0;
+      renderContactGrid();
+      return;
+    }
+    portal.idleRippleStartedAt = performance.now();
+    if (!portal.idleRippleFrame) portal.idleRippleFrame = requestAnimationFrame(animateContactIdleRipple);
+  }
+
+  function animateContactIdleRipple(time) {
+    const portal = contactPortalState;
+    portal.idleRippleFrame = 0;
+    if (!portal.idleRippleVisible) return;
+    const rippleDuration = contactIdleRippleDuration / portal.rippleSpeed;
+    const rippleCycle = contactIdleRippleCycle / portal.rippleSpeed;
+    const phase = (time - portal.idleRippleStartedAt) % rippleCycle;
+    const portalIsAnimating = portal.target !== 0 || portal.progress !== 0;
+    portal.idleRippleProgress = !portalIsAnimating && phase < rippleDuration
+      ? phase / rippleDuration
+      : 0;
+    renderContactGrid();
+    portal.idleRippleFrame = requestAnimationFrame(animateContactIdleRipple);
+  }
+
+  function contactPortalOpenCurve(value) {
+    const portal = contactPortalState;
+    const acceleration = portal.acceleration;
+    const spring = portal.spring;
+    const duration = Math.max(portal.motionDuration || contactPortalOpenDuration, 1);
+    const peakAt = clamp(portal.springTime / duration, .1, .96);
+    const settleAt = clamp((portal.springTime + portal.reboundTime) / duration, peakAt, 1);
+    // The grid gets three progressively smaller rebound cycles. The visible
+    // Portal itself remains on its own non-spring curve.
+    const springStrength = spring / 50;
+    const overshoot = 1 + springStrength * .3;
+    if (value < peakAt) {
+      const progress = value / peakAt;
+      return overshoot * Math.pow(progress, acceleration);
+    }
+    if (value >= settleAt) return 1;
+    const progress = (value - peakAt) / (settleAt - peakAt);
+    const amplitude = (overshoot - 1) * Math.pow(1 - progress, 1.65);
+    return 1 + amplitude * Math.cos(progress * Math.PI * 6);
+  }
+
+  function contactPortalVisualCurve(value) {
+    const portal = contactPortalState;
+    const duration = Math.max(portal.motionDuration || contactPortalOpenDuration, 1);
+    const peakAt = clamp(portal.springTime / duration, .1, .96);
+    if (value >= peakAt) return 1;
+    return Math.pow(value / peakAt, portal.acceleration);
+  }
+
+  function easeOutCubic(value) {
+    return 1 - Math.pow(1 - value, 3);
+  }
+
+  function renderContactPortalMotion() {
+    const portal = contactPortalState;
+    if (!portal.hit) return;
+    const visibleProgress = clamp(portal.visualProgress);
+    const scale = .1 + visibleProgress * .9;
+    portal.hit.style.setProperty('--portal-motion-opacity', visibleProgress.toFixed(5));
+    portal.hit.style.setProperty('--portal-motion-scale', scale.toFixed(5));
+    portal.hit.style.setProperty('--go-motion-opacity', (1 - visibleProgress).toFixed(5));
+    portal.hit.style.setProperty('--go-motion-scale', (1 - visibleProgress * .45).toFixed(5));
+  }
+
+  function measureContactPortal() {
+    const portal = contactPortalState;
+    const { section, stage, hit, grid, visual } = portal;
+    if (!section || !stage || !hit || !grid || !visual) return;
+    const width = section.clientWidth;
+    const height = section.clientHeight;
+    const sectionRect = section.getBoundingClientRect();
+    const hitRect = hit.getBoundingClientRect();
+    const gridSpacing = getGridSpacingForWidth(width);
+    grid.parentElement.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    portal.geometry = {
+      width,
+      height,
+      centerX: width / 2,
+      centerY: hitRect.top + hitRect.height / 2 - sectionRect.top,
+      radius: Math.max(36, visual.offsetWidth / 2),
+      gridSpacing
+    };
+    renderContactGrid();
+  }
+
+  function contactGridPoint(x, y, geometry, progress, rippleProgress = 0) {
+    if (!geometry) return [x, y];
+    const dx = x - geometry.centerX;
+    const dy = y - geometry.centerY;
+    const distance = Math.hypot(dx, dy);
+    if (!distance) return [x, y];
+    let radialOffset = 0;
+    const influence = geometry.radius * (contactPortalState.gridRange / 100);
+    if (progress && distance < influence) {
+      radialOffset += progress * geometry.radius * .56 * Math.pow(1 - distance / influence, 1.55);
+    }
+    if (rippleProgress) {
+      const maxDistance = Math.hypot(
+        Math.max(geometry.centerX, geometry.width - geometry.centerX),
+        Math.max(geometry.centerY, geometry.height - geometry.centerY)
+      );
+      // A single broad ring keeps every idle pulse visibly circular rather
+      // than reading as a train of small waves across the square grid.
+      const front = maxDistance * rippleProgress;
+      const waveWidth = Math.max(1, maxDistance * (contactPortalState.rippleThickness / 100));
+      const delta = (distance - front) / waveWidth;
+      if (front > 0 && Math.abs(delta) < 1) {
+        const envelope = .5 * (Math.cos(delta * Math.PI) + 1);
+        const fading = Math.pow(1 - Math.min(front / maxDistance, 1), .38);
+        radialOffset += Math.sin(delta * Math.PI) * envelope * geometry.gridSpacing * .38 * fading;
+      }
+    }
+    return [x + dx / distance * radialOffset, y + dy / distance * radialOffset];
+  }
+
+  function contactGridLine(x1, y1, x2, y2, geometry, progress, rippleProgress) {
+    const distance = Math.hypot(x2 - x1, y2 - y1);
+    const steps = Math.max(1, Math.ceil(distance / 32));
+    let path = '';
+    for (let step = 0; step <= steps; step += 1) {
+      const ratio = step / steps;
+      const [x, y] = contactGridPoint(x1 + (x2 - x1) * ratio, y1 + (y2 - y1) * ratio, geometry, progress, rippleProgress);
+      path += `${step ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`;
     }
     return path;
+  }
+
+  function contactGridPath(width, height, geometry, progress, rippleProgress) {
+    const verticals = filledGridCoordinates(width, geometry.gridSpacing);
+    const horizontals = topRectangularGridRows(height, geometry.centerY, geometry.gridSpacing);
+    let path = '';
+    verticals.forEach(x => {
+      path += contactGridLine(x, 0, x, height, geometry, progress, rippleProgress);
+    });
+    horizontals.forEach(y => {
+      path += contactGridLine(0, y, width, y, geometry, progress, rippleProgress);
+    });
+    return path;
+  }
+
+  function centeredGridCoordinates(length, center, spacing = myWayRaySpacing) {
+    const coordinates = [center];
+    for (let value = center - spacing; value > .5; value -= spacing) coordinates.unshift(value);
+    if (coordinates[0] > .5) coordinates.unshift(0);
+    for (let value = center + spacing; value < length - .5; value += spacing) coordinates.push(value);
+    if (coordinates[coordinates.length - 1] < length - .5) coordinates.push(length);
+    return coordinates;
+  }
+
+  function distributedFrameCoordinates(start, end, targetSpacing) {
+    const span = end - start;
+    const count = Math.max(1, Math.round(span / targetSpacing));
+    return Array.from({ length: count + 1 }, (_, index) => start + span * index / count);
+  }
+
+  function filledGridCoordinates(length, spacing) {
+    const count = Math.max(1, Math.round(length / spacing));
+    return Array.from({ length: count + 1 }, (_, index) => length * index / count);
+  }
+
+  function topRectangularGridRows(length, center, spacing) {
+    const remainder = ((center % spacing) + spacing) % spacing;
+    // Keep the portal centre on a horizontal grid line.  Only the lead-in row
+    // absorbs the leftover height; every subsequent completed cell is square.
+    const firstRowHeight = remainder < spacing * .5 ? remainder + spacing : remainder;
+    const rows = [0];
+    for (let y = firstRowHeight; y < length + .5; y += spacing) rows.push(y);
+    return rows;
+  }
+
+  function getContactGridSpacing() {
+    const geometry = contactPortalState.geometry;
+    if (!geometry) return myWayRaySpacing;
+    return geometry.gridSpacing || myWayRaySpacing;
+  }
+
+  function getGridSpacingForWidth(width) {
+    const gridHalfColumns = Math.max(1, Math.round(width / (myWayRaySpacing * 2)));
+    return width / (gridHalfColumns * 2);
+  }
+
+  function renderContactGrid() {
+    const portal = contactPortalState;
+    const { grid, geometry } = portal;
+    if (!grid || !geometry) return;
+    grid.setAttribute('d', contactGridPath(geometry.width, geometry.height, geometry, portal.progress, portal.idleRippleProgress));
   }
 
   function fitHeroTitle(force = false) {
@@ -1398,9 +1782,7 @@ if (gl_FragColor.a < .01) discard;
     fitHeroTitle();
     measureWorkIntro();
     measureWorkTimeline();
-    const contact = $('.contact');
-    $('.contact-grid').setAttribute('viewBox', `0 0 ${contact.clientWidth} ${contact.clientHeight}`);
-    $('.contact-grid path').setAttribute('d', gridPath(contact.clientWidth, contact.clientHeight));
+    measureContactPortal();
     measureMemoryRays();
     resizeMemoryScene();
     updateScroll();
@@ -1451,9 +1833,12 @@ if (gl_FragColor.a < .01) discard;
     if (!stage || !aperture || !workIntroState.outer) return;
     const width = stage.clientWidth;
     const height = stage.clientHeight;
-    const targetCellSize = 64;
-    const columns = Math.max(1, Math.round(width / targetCellSize));
-    const rows = Math.max(1, Math.round(height / targetCellSize));
+    // Keep Work's base grid cadence identical to the Contact grid. Both
+    // screens then share the same horizontal line rhythm before their own
+    // perspective/portal deformation is applied.
+    const gridSpacing = getGridSpacingForWidth(width);
+    const columns = Math.max(1, Math.round(width / gridSpacing));
+    const rows = Math.max(1, Math.round(height / gridSpacing));
     aperture.setAttribute('viewBox', `0 0 ${width} ${height}`);
     ['.work-aperture-cover', '.work-aperture-paper', '.work-aperture-dot-field'].forEach(selector => {
       const rect = $(selector, aperture);
@@ -1873,5 +2258,5 @@ if (gl_FragColor.a < .01) discard;
     contrast.addEventListener('click', () => applyPaperTheme(paperThemeIndex + 1));
   }
 
-  buildData(); buildWork(); buildMyWayType(); buildMyWayStretchControl(); buildMemories(); bind(); resize(); initHeroLetterMotion();
+  buildData(); buildWork(); buildMyWayType(); buildMyWayStretchControl(); buildMemories(); buildContactPortal(); bind(); resize(); initHeroLetterMotion();
 })();
