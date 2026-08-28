@@ -30,7 +30,20 @@
   const memorySpawnInterval = 900;
   const memoryLifetimeMin = 7500;
   const memoryLifetimeMax = 9000;
-  const memoryScene = { section: null, host: null, smiley: null, slots: [], smileyVisible: false, nextSpawnAt: 0, sequenceIndex: 0, photoIndex: 0, serial: 0, frame: 0, renderer: null, scene: null, camera: null, canvas: null, textures: new Map(), worldPerPixel: 1, spawnOrigin: { x: 0, y: 0 }, smileyDocumentCenter: { x: 0, y: 0 }, size: { width: 0, height: 0 }, frustum: null, viewProjectionMatrix: null, bounds: null };
+  const memoryGrabDepth = 300;
+  const memoryGrabWidth = 240;
+  const memoryExitDuration = 700;
+  const memoryDissolveDuration = 900;
+  const memoryScene = {
+    section: null, host: null, smiley: null, slots: [], smileyVisible: false,
+    nextSpawnAt: 0, sequenceIndex: 0, photoIndex: 0, serial: 0, frame: 0,
+    renderer: null, scene: null, camera: null, canvas: null, textures: new Map(),
+    worldPerPixel: 1, spawnOrigin: { x: 0, y: 0 }, smileyDocumentCenter: { x: 0, y: 0 },
+    size: { width: 0, height: 0 }, frustum: null, viewProjectionMatrix: null, bounds: null,
+    raycaster: null, pointerNdc: null, pointerWorld: null, grabbedSlot: null, hoveredSlot: null,
+    pointer: { x: 0, y: 0, lastX: 0, lastY: 0, vx: 0, vy: 0, lastAt: 0, id: null, seen: false },
+    lastFrameAt: 0, suppressClickUntil: 0
+  };
   let paperThemeIndex = 0;
 
   class Noise {
@@ -419,6 +432,9 @@
     memoryScene.frustum = new T.Frustum();
     memoryScene.viewProjectionMatrix = new T.Matrix4();
     memoryScene.bounds = new T.Box3();
+    memoryScene.raycaster = new T.Raycaster();
+    memoryScene.pointerNdc = new T.Vector2();
+    memoryScene.pointerWorld = new T.Vector3();
     memoryScene.scene.add(new T.HemisphereLight(0xfff2ed, 0x160000, 2.25));
     const keyLight = new T.DirectionalLight(0xffffff, 2.4);
     keyLight.position.set(-300, 420, 720);
@@ -428,8 +444,9 @@
     memoryScene.scene.add(rimLight);
     preloadMemoryTextures();
     memoryScene.slots = Array.from({ length: 10 }, () => {
-      return { startedAt: 0, flight: null, kind: null, file: null, model: null };
+      return { phase: 'idle', startedAt: 0, flight: null, kind: null, file: null, model: null, grab: null, dissolveMotion: null, dissolveStartedAt: 0 };
     });
+    bindMemoryInteraction();
     resizeMemoryScene();
     const setSmileyVisibility = visible => {
       memoryScene.smileyVisible = visible;
@@ -539,7 +556,80 @@
     return { paper: style.getPropertyValue('--paper').trim() || '#e1cab8', ink: style.getPropertyValue('--ink').trim() || '#160000' };
   }
 
-  function makeCaptionMesh(caption, width, pixelScale, ink, paper, offsetY, cardThickness) {
+  function makeMemoryGridTexture(paper, ink) {
+    const T = window.THREE;
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const context = canvas.getContext('2d');
+    context.fillStyle = paper;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.strokeStyle = ink;
+    context.lineWidth = 1;
+    for (let value = 0; value <= 256; value += 32) {
+      context.beginPath();
+      context.moveTo(value + .5, 0);
+      context.lineTo(value + .5, 256);
+      context.moveTo(0, value + .5);
+      context.lineTo(256, value + .5);
+      context.stroke();
+    }
+    context.lineWidth = 2;
+    context.strokeRect(1, 1, 254, 254);
+    const texture = new T.CanvasTexture(canvas);
+    texture.colorSpace = T.SRGBColorSpace;
+    texture.userData.memoryGrid = true;
+    return texture;
+  }
+
+  function addMemoryDissolve(material, uniforms) {
+    material.transparent = true;
+    material.alphaTest = .001;
+    material.customProgramCacheKey = () => 'memory-dissolve-v2';
+    material.onBeforeCompile = shader => {
+      Object.assign(shader.uniforms, uniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vMemoryPoint;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMemoryPoint = position.xy;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>
+varying vec2 vMemoryPoint;
+uniform float uMemoryDissolve;
+uniform float uMemoryNoiseScale;
+uniform float uMemoryOpacity;
+uniform float uMemorySeed;
+uniform vec3 uMemoryEdgeColor;
+float memoryHash(vec3 point) {
+  point = fract(point * .1031);
+  point += dot(point, point.yzx + 33.33);
+  return fract((point.x + point.y) * point.z);
+}
+float memoryNoise(vec3 point) {
+  vec3 cell = floor(point);
+  vec3 local = fract(point);
+  local = local * local * (3.0 - 2.0 * local);
+  return mix(
+    mix(mix(memoryHash(cell), memoryHash(cell + vec3(1.,0.,0.)), local.x), mix(memoryHash(cell + vec3(0.,1.,0.)), memoryHash(cell + vec3(1.,1.,0.)), local.x), local.y),
+    mix(mix(memoryHash(cell + vec3(0.,0.,1.)), memoryHash(cell + vec3(1.,0.,1.)), local.x), mix(memoryHash(cell + vec3(0.,1.,1.)), memoryHash(cell + vec3(1.,1.,1.)), local.x), local.y),
+    local.z
+  );
+}`)
+        .replace('#include <dithering_fragment>', `
+float memoryThreshold = uMemoryDissolve * 1.4 - .24;
+float memoryGrain = memoryNoise(vec3(vMemoryPoint * uMemoryNoiseScale + uMemorySeed, uMemorySeed));
+if (memoryGrain < memoryThreshold) discard;
+float memoryEdge = 1.0 - smoothstep(memoryThreshold, memoryThreshold + .09, memoryGrain);
+gl_FragColor.rgb = mix(gl_FragColor.rgb, uMemoryEdgeColor, memoryEdge * smoothstep(.02, .22, uMemoryDissolve));
+gl_FragColor.a *= uMemoryOpacity;
+if (gl_FragColor.a < .01) discard;
+#include <dithering_fragment>`);
+      material.userData.memoryShader = shader;
+    };
+    material.needsUpdate = true;
+    return material;
+  }
+
+  function makeCaptionMesh(caption, width, pixelScale, ink, paper, offsetY, cardThickness, dissolveUniforms) {
     const T = window.THREE;
     const canvas = document.createElement('canvas');
     canvas.width = 640;
@@ -557,8 +647,8 @@
     texture.userData.memoryCaption = true;
     const captionHeight = 28 * pixelScale;
     const captionThickness = cardThickness;
-    const edge = new T.MeshStandardMaterial({ color: ink, roughness: .48, metalness: .08 });
-    const front = new T.MeshBasicMaterial({ map: texture });
+    const edge = addMemoryDissolve(new T.MeshStandardMaterial({ color: ink, roughness: .48, metalness: .08 }), dissolveUniforms);
+    const front = addMemoryDissolve(new T.MeshBasicMaterial({ map: texture }), dissolveUniforms);
     const mesh = new T.Mesh(
       new T.BoxGeometry(width, captionHeight, captionThickness),
       [edge, edge, edge, edge, front, edge]
@@ -604,31 +694,82 @@
     const width = 156 * pixelScale;
     const height = width / aspectRatio;
     const thickness = 10 * pixelScale;
-    const edge = new T.MeshStandardMaterial({ color: ink, roughness: .5, metalness: .1 });
-    const front = new T.MeshStandardMaterial({ color: texture ? 0xffffff : paper, map: texture || null, roughness: .72, metalness: 0 });
+    const sharedNoiseScale = { value: 1 / Math.max(18 * pixelScale, .001) };
+    const sharedNoiseSeed = { value: seeded(memoryScene.serial + 910) * 8 };
+    const sharedEdgeColor = { value: new T.Color(0x000000) };
+    const dissolveUniforms = {
+      uMemoryDissolve: { value: 0 },
+      uMemoryNoiseScale: sharedNoiseScale,
+      uMemoryOpacity: { value: 1 },
+      uMemorySeed: sharedNoiseSeed,
+      uMemoryEdgeColor: sharedEdgeColor
+    };
+    const gridDissolveUniforms = {
+      uMemoryDissolve: { value: 0 },
+      uMemoryNoiseScale: sharedNoiseScale,
+      uMemoryOpacity: { value: 1 },
+      uMemorySeed: sharedNoiseSeed,
+      uMemoryEdgeColor: sharedEdgeColor
+    };
+    const edge = addMemoryDissolve(new T.MeshStandardMaterial({ color: ink, roughness: .5, metalness: .1 }), dissolveUniforms);
+    const front = addMemoryDissolve(new T.MeshStandardMaterial({ color: texture ? 0xffffff : paper, map: texture || null, roughness: .72, metalness: 0 }), dissolveUniforms);
     const card = new T.Mesh(new T.BoxGeometry(width, height, thickness), [edge, edge, edge, edge, front, edge]);
+    card.userData.memoryHitTarget = true;
     root.userData.photoMaterial = front;
+    root.userData.dissolveUniforms = dissolveUniforms;
+    root.userData.baseWidth = width;
     // Keep the complete card (image plus caption) centered on the group origin.
     // That origin is positioned at the smiley's exact center when the flight begins.
     card.position.y = 14 * pixelScale;
     root.add(card);
-    const captionMesh = makeCaptionMesh(caption, width, pixelScale, ink, paper, height / 2, thickness);
+    const gridTexture = makeMemoryGridTexture(paper, ink);
+    const gridMaterial = addMemoryDissolve(new T.MeshBasicMaterial({ map: gridTexture, transparent: true, depthWrite: false }), gridDissolveUniforms);
+    const grid = new T.Mesh(new T.PlaneGeometry(width, height), gridMaterial);
+    grid.position.set(0, card.position.y, thickness / 2 - .65 * pixelScale);
+    grid.userData.memoryGrid = true;
+    root.userData.gridMaterial = gridMaterial;
+    root.userData.gridDissolveUniforms = gridDissolveUniforms;
+    root.add(grid);
+    const captionMesh = makeCaptionMesh(caption, width, pixelScale, ink, paper, height / 2, thickness, dissolveUniforms);
     root.add(captionMesh.mesh);
     return root;
   }
 
   function disposeMemoryModel(model) {
     if (!model) return;
+    const disposedMaterials = new Set();
+    const disposedGeometries = new Set();
     model.traverse(object => {
       if (!object.isMesh) return;
-      object.geometry?.dispose();
+      if (object.geometry && !disposedGeometries.has(object.geometry)) {
+        disposedGeometries.add(object.geometry);
+        object.geometry.dispose();
+      }
       const materials = Array.isArray(object.material) ? object.material : [object.material];
       materials.forEach(material => {
+        if (!material || disposedMaterials.has(material)) return;
+        disposedMaterials.add(material);
         if (material?.map?.userData?.memoryCaption) material.map.dispose();
+        if (material?.map?.userData?.memoryGrid) material.map.dispose();
         material?.dispose();
       });
     });
     memoryScene.scene.remove(model);
+  }
+
+  function resetMemorySlot(slot) {
+    if (memoryScene.grabbedSlot === slot) memoryScene.grabbedSlot = null;
+    if (memoryScene.hoveredSlot === slot) memoryScene.hoveredSlot = null;
+    disposeMemoryModel(slot.model);
+    slot.phase = 'idle';
+    slot.startedAt = 0;
+    slot.flight = null;
+    slot.kind = null;
+    slot.file = null;
+    slot.model = null;
+    slot.grab = null;
+    slot.dissolveMotion = null;
+    slot.dissolveStartedAt = 0;
   }
 
   function requestMemoryFrame() {
@@ -652,6 +793,10 @@
     memoryScene.scene.add(slot.model);
     slot.kind = kind;
     slot.file = file;
+    slot.phase = 'flying';
+    slot.grab = null;
+    slot.dissolveMotion = null;
+    slot.dissolveStartedAt = 0;
     const variation = seeded(serial + 500);
     const T = window.THREE;
     const spinAxis = new T.Vector3(
@@ -675,6 +820,178 @@
     };
     slot.startedAt = time;
     paintMemory(slot, 0);
+  }
+
+  function memoryPointerToWorld(clientX, clientY, z = memoryGrabDepth) {
+    const { canvas, camera, pointerNdc, pointerWorld } = memoryScene;
+    if (!canvas || !camera || !pointerNdc || !pointerWorld) return null;
+    const rect = canvas.getBoundingClientRect();
+    pointerNdc.set(
+      (clientX - rect.left) / Math.max(rect.width, 1) * 2 - 1,
+      -((clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1
+    );
+    pointerWorld.set(pointerNdc.x, pointerNdc.y, .5).unproject(camera);
+    pointerWorld.sub(camera.position).normalize();
+    const distance = (z - camera.position.z) / pointerWorld.z;
+    return pointerWorld.multiplyScalar(distance).add(camera.position);
+  }
+
+  function hitMemoryPhoto(clientX, clientY) {
+    const { raycaster, camera, pointerNdc, canvas } = memoryScene;
+    if (!raycaster || !camera || !pointerNdc || !canvas) return null;
+    const candidates = memoryScene.slots.filter(slot => slot.phase === 'flying' && slot.kind === 'photo' && slot.model);
+    if (!candidates.length) return null;
+    const rect = canvas.getBoundingClientRect();
+    pointerNdc.set(
+      (clientX - rect.left) / Math.max(rect.width, 1) * 2 - 1,
+      -((clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1
+    );
+    candidates.forEach(slot => slot.model.updateMatrixWorld(true));
+    raycaster.setFromCamera(pointerNdc, camera);
+    const hits = raycaster.intersectObjects(candidates.map(slot => slot.model), true);
+    for (const hit of hits) {
+      if (hit.object.userData.memoryGrid) continue;
+      const slot = candidates.find(candidate => {
+        let object = hit.object;
+        while (object) {
+          if (object === candidate.model) return true;
+          object = object.parent;
+        }
+        return false;
+      });
+      if (slot) return slot;
+    }
+    return null;
+  }
+
+  function setMemoryCursor(slot, grabbing = false) {
+    memoryScene.hoveredSlot = slot;
+    document.body.classList.toggle('memory-can-grab', Boolean(slot) && !grabbing);
+    document.body.classList.toggle('memory-is-grabbing', grabbing);
+  }
+
+  function beginMemoryGrab(slot, event) {
+    const T = window.THREE;
+    const model = slot.model;
+    if (!model || slot.phase !== 'flying') return;
+    const depthScale = (memoryScene.camera.position.z - memoryGrabDepth) / memoryScene.camera.position.z;
+    const targetScale = memoryGrabWidth * memoryScene.worldPerPixel * depthScale / model.userData.baseWidth;
+    slot.phase = 'grabbed';
+    slot.grab = {
+      velocity: new T.Vector3(),
+      scaleVelocity: 0,
+      targetScale,
+      targetQuaternion: new T.Quaternion(),
+      tiltEuler: new T.Euler()
+    };
+    memoryScene.grabbedSlot = slot;
+    memoryScene.pointer.id = event.pointerId;
+    memoryScene.pointer.x = event.clientX;
+    memoryScene.pointer.y = event.clientY;
+    memoryScene.pointer.lastX = event.clientX;
+    memoryScene.pointer.lastY = event.clientY;
+    memoryScene.pointer.lastAt = performance.now();
+    memoryScene.pointer.vx = 0;
+    memoryScene.pointer.vy = 0;
+    memoryScene.pointer.seen = true;
+    memoryScene.suppressClickUntil = performance.now() + 700;
+    setMemoryCursor(slot, true);
+    requestMemoryFrame();
+  }
+
+  function releaseMemoryGrab(time = performance.now()) {
+    const slot = memoryScene.grabbedSlot;
+    if (!slot || slot.phase !== 'grabbed') return;
+    const T = window.THREE;
+    const depthScale = (memoryScene.camera.position.z - slot.model.position.z) / memoryScene.camera.position.z;
+    const worldPerScreenPixel = memoryScene.worldPerPixel * depthScale;
+    const pointerVelocity = new T.Vector3(
+      memoryScene.pointer.vx * worldPerScreenPixel,
+      -memoryScene.pointer.vy * worldPerScreenPixel,
+      0
+    );
+    const outward = new T.Vector3(slot.model.position.x, slot.model.position.y, 0);
+    if (outward.lengthSq() < .001) {
+      outward.set(
+        memoryScene.pointer.x - memoryScene.size.width / 2,
+        memoryScene.size.height / 2 - memoryScene.pointer.y,
+        0
+      );
+    }
+    if (outward.lengthSq() < .001) outward.set(1, 0, 0);
+    outward.normalize();
+    const velocity = slot.grab.velocity.clone().multiplyScalar(.6).addScaledVector(pointerVelocity, .4);
+    const minimumOutwardSpeed = 900 * worldPerScreenPixel;
+    const outwardSpeed = velocity.dot(outward);
+    if (outwardSpeed < minimumOutwardSpeed) velocity.addScaledVector(outward, minimumOutwardSpeed - outwardSpeed);
+    const throwSpeedPixels = velocity.length() / Math.max(worldPerScreenPixel, .001);
+    const travelPixels = Math.hypot(memoryScene.size.width, memoryScene.size.height) * .58 + Math.min(throwSpeedPixels * .12, 240);
+    const direction = velocity.clone().normalize();
+    const spinDirection = Math.abs(memoryScene.pointer.vx) > 12 ? -Math.sign(memoryScene.pointer.vx) : (outward.x >= 0 ? 1 : -1);
+    slot.phase = 'dissolving';
+    slot.dissolveStartedAt = time;
+    slot.dissolveMotion = {
+      startPosition: slot.model.position.clone(),
+      direction,
+      distance: travelPixels * worldPerScreenPixel,
+      startQuaternion: slot.model.quaternion.clone(),
+      spinAxis: new T.Vector3(-direction.y * .18, direction.x * .18, 1).normalize(),
+      spinAngle: spinDirection * .3,
+      spinQuaternion: new T.Quaternion()
+    };
+    slot.grab = null;
+    memoryScene.grabbedSlot = null;
+    memoryScene.pointer.id = null;
+    memoryScene.suppressClickUntil = time + 500;
+    setMemoryCursor(null, false);
+    requestMemoryFrame();
+  }
+
+  function bindMemoryInteraction() {
+    if (!matchMedia('(pointer:fine)').matches) return;
+    addEventListener('pointerdown', event => {
+      if (event.pointerType === 'touch' || event.button !== 0 || memoryScene.grabbedSlot) return;
+      const slot = hitMemoryPhoto(event.clientX, event.clientY);
+      if (!slot) return;
+      event.preventDefault();
+      event.stopPropagation();
+      beginMemoryGrab(slot, event);
+    }, { capture: true, passive: false });
+    addEventListener('pointermove', event => {
+      const pointer = memoryScene.pointer;
+      pointer.x = event.clientX;
+      pointer.y = event.clientY;
+      pointer.seen = true;
+      if (memoryScene.grabbedSlot && pointer.id === event.pointerId) {
+        const now = performance.now();
+        const elapsed = Math.max(now - pointer.lastAt, 8);
+        const instantVx = (event.clientX - pointer.lastX) / elapsed * 1000;
+        const instantVy = (event.clientY - pointer.lastY) / elapsed * 1000;
+        pointer.vx += (instantVx - pointer.vx) * .3;
+        pointer.vy += (instantVy - pointer.vy) * .3;
+        pointer.lastX = event.clientX;
+        pointer.lastY = event.clientY;
+        pointer.lastAt = now;
+        if (event.cancelable) event.preventDefault();
+        requestMemoryFrame();
+      }
+    }, { passive: false });
+    addEventListener('pointerup', event => {
+      if (memoryScene.pointer.id !== event.pointerId) return;
+      if (event.cancelable) event.preventDefault();
+      event.stopPropagation();
+      releaseMemoryGrab();
+    }, { capture: true });
+    addEventListener('pointercancel', event => {
+      if (memoryScene.pointer.id === event.pointerId) releaseMemoryGrab();
+    }, { capture: true });
+    addEventListener('blur', () => releaseMemoryGrab());
+    addEventListener('click', event => {
+      if (performance.now() >= memoryScene.suppressClickUntil) return;
+      event.preventDefault();
+      event.stopPropagation();
+      memoryScene.suppressClickUntil = 0;
+    }, { capture: true });
   }
 
   function paintMemory(slot, progress) {
@@ -714,8 +1031,63 @@
     return frustum.intersectsBox(bounds);
   }
 
+  function updateGrabbedMemory(slot, delta) {
+    const { model, grab } = slot;
+    if (!model || !grab) return;
+    const pointerTarget = memoryPointerToWorld(memoryScene.pointer.x, memoryScene.pointer.y);
+    if (!pointerTarget) return;
+    const stiffness = 168;
+    const damping = Math.exp(-10.5 * delta);
+    grab.velocity.addScaledVector(pointerTarget.sub(model.position), stiffness * delta).multiplyScalar(damping);
+    model.position.addScaledVector(grab.velocity, delta);
+    grab.scaleVelocity += (grab.targetScale - model.scale.x) * 145 * delta;
+    grab.scaleVelocity *= Math.exp(-9.5 * delta);
+    const nextScale = Math.max(.01, model.scale.x + grab.scaleVelocity * delta);
+    model.scale.setScalar(nextScale);
+    memoryScene.pointer.vx *= Math.exp(-7 * delta);
+    memoryScene.pointer.vy *= Math.exp(-7 * delta);
+    grab.tiltEuler.set(
+      clamp(memoryScene.pointer.vy / 2200, -.1, .1),
+      clamp(-memoryScene.pointer.vx / 2200, -.12, .12),
+      clamp(-memoryScene.pointer.vx / 8500, -.035, .035)
+    );
+    grab.targetQuaternion.setFromEuler(grab.tiltEuler);
+    model.quaternion.slerp(grab.targetQuaternion, 1 - Math.exp(-10 * delta));
+  }
+
+  function updateDissolvingMemory(slot, time) {
+    const elapsed = time - slot.dissolveStartedAt;
+    const progress = clamp(elapsed / memoryDissolveDuration);
+    const travelProgress = clamp(elapsed / memoryExitDuration);
+    const uniforms = slot.model?.userData.dissolveUniforms;
+    const gridUniforms = slot.model?.userData.gridDissolveUniforms;
+    if (slot.dissolveMotion && slot.model) {
+      const easedTravel = travelProgress * travelProgress * travelProgress;
+      slot.model.position.copy(slot.dissolveMotion.startPosition).addScaledVector(
+        slot.dissolveMotion.direction,
+        slot.dissolveMotion.distance * easedTravel
+      );
+      slot.dissolveMotion.spinQuaternion.setFromAxisAngle(
+        slot.dissolveMotion.spinAxis,
+        slot.dissolveMotion.spinAngle * easedTravel
+      );
+      slot.model.quaternion.copy(slot.dissolveMotion.startQuaternion).multiply(slot.dissolveMotion.spinQuaternion);
+    }
+    if (uniforms) {
+      const photoProgress = clamp(progress / .76);
+      uniforms.uMemoryDissolve.value = photoProgress * photoProgress * (3 - 2 * photoProgress);
+    }
+    if (gridUniforms) {
+      const gridProgress = clamp((progress - .18) / .82);
+      gridUniforms.uMemoryDissolve.value = gridProgress * gridProgress * (3 - 2 * gridProgress);
+    }
+    if (progress >= 1) resetMemorySlot(slot);
+  }
+
   function updateMemoryFlight(time) {
     memoryScene.frame = 0;
+    const delta = Math.min(Math.max((time - (memoryScene.lastFrameAt || time)) / 1000, 0), .032);
+    memoryScene.lastFrameAt = time;
     // The overlay is fixed, but the flight paths live in the smiley's frame of reference.
     // Use document coordinates plus the current scroll position to avoid layout-read lag.
     updateMemorySpawnOrigin();
@@ -731,19 +1103,24 @@
     let hasFlyingObjects = false;
     memoryScene.slots.forEach(slot => {
       if (!slot.startedAt) return;
-      const progress = (time - slot.startedAt) / slot.flight.duration;
-      paintMemory(slot, Math.max(progress, 0));
-      if (!isMemoryVisible(slot.model)) {
-        disposeMemoryModel(slot.model);
-        slot.startedAt = 0;
-        slot.flight = null;
-        slot.model = null;
-        slot.kind = null;
-        slot.file = null;
-        return;
+      if (slot.phase === 'flying') {
+        const progress = (time - slot.startedAt) / slot.flight.duration;
+        paintMemory(slot, Math.max(progress, 0));
+        if (!isMemoryVisible(slot.model)) {
+          resetMemorySlot(slot);
+          return;
+        }
+      } else if (slot.phase === 'grabbed') {
+        updateGrabbedMemory(slot, delta);
+      } else if (slot.phase === 'dissolving') {
+        updateDissolvingMemory(slot, time);
+        if (slot.phase === 'idle') return;
       }
       hasFlyingObjects = true;
     });
+    if (!memoryScene.grabbedSlot && memoryScene.pointer.seen && matchMedia('(pointer:fine)').matches) {
+      setMemoryCursor(hitMemoryPhoto(memoryScene.pointer.x, memoryScene.pointer.y), false);
+    }
     memoryScene.renderer?.render(memoryScene.scene, memoryScene.camera);
     if (memoryScene.smileyVisible || hasFlyingObjects) requestMemoryFrame();
   }

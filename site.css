@@ -97,6 +97,8 @@ a-waves path{fill:none;stroke:var(--ink);stroke-width:1px;vector-effect:non-scal
 .my-way-smiley{z-index:8;transform-origin:center;animation:my-way-smiley-spin 7.5s linear infinite;will-change:transform}
 .memory-field{position:fixed;inset:0;z-index:100;pointer-events:none}
 .memory-canvas{display:block;width:100%;height:100%;pointer-events:none}
+body.memory-can-grab,body.memory-can-grab *{cursor:grab!important}
+body.memory-is-grabbing,body.memory-is-grabbing *{cursor:grabbing!important;user-select:none}
 @keyframes my-way-smiley-spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
 
 .contact{height:159vh;min-height:1100px;position:relative;overflow:hidden;background:var(--paper);transition:background-color .5s ease;border-top:var(--line) solid var(--ink)}
