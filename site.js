@@ -27,7 +27,12 @@
   const workTimelineState = { expansion: 0, hold: 0, media: 0, cardTail: 0, collapse: 0, total: 0 };
   const paperPalette = ['#e1cab8', '#f40c3f', '#fff2ed'];
   const memorySpawnSequence = ['photo', 'photo', 'photo', 'photo', 'star', 'photo', 'photo', 'photo', 'star'];
-  const memorySpawnInterval = 900;
+  const memoryMinimumSlots = 3;
+  const memoryMaximumSlots = 10;
+  const memoryDensityArea = 140000;
+  const memorySpawnIntervalMin = 900;
+  const memorySpawnIntervalMax = 1600;
+  const memorySpawnReferenceArea = 950000;
   const memoryLifetimeMin = 7500;
   const memoryLifetimeMax = 9000;
   const memoryGrabDepth = 300;
@@ -42,6 +47,7 @@
     size: { width: 0, height: 0 }, frustum: null, viewProjectionMatrix: null, bounds: null,
     raycaster: null, pointerNdc: null, pointerWorld: null, grabbedSlot: null, hoveredSlot: null,
     pointer: { x: 0, y: 0, lastX: 0, lastY: 0, vx: 0, vy: 0, lastAt: 0, id: null, seen: false },
+    capacity: memoryMaximumSlots, spawnInterval: memorySpawnIntervalMin,
     lastFrameAt: 0, suppressClickUntil: 0
   };
   let paperThemeIndex = 0;
@@ -443,7 +449,7 @@
     rimLight.position.set(280, -120, 420);
     memoryScene.scene.add(rimLight);
     preloadMemoryTextures();
-    memoryScene.slots = Array.from({ length: 10 }, () => {
+    memoryScene.slots = Array.from({ length: memoryMaximumSlots }, () => {
       return { phase: 'idle', startedAt: 0, flight: null, kind: null, file: null, model: null, grab: null, dissolveMotion: null, dissolveStartedAt: 0 };
     });
     bindMemoryInteraction();
@@ -469,8 +475,19 @@
     if (!host || !renderer || !camera) return;
     const width = Math.max(host.clientWidth, 1);
     const height = Math.max(host.clientHeight, 1);
+    const area = width * height;
     memoryScene.size.width = width;
     memoryScene.size.height = height;
+    memoryScene.capacity = clamp(
+      Math.round(area / memoryDensityArea),
+      memoryMinimumSlots,
+      memoryMaximumSlots
+    );
+    memoryScene.spawnInterval = Math.round(clamp(
+      memorySpawnIntervalMin * Math.sqrt(memorySpawnReferenceArea / Math.max(area, 1)),
+      memorySpawnIntervalMin,
+      memorySpawnIntervalMax
+    ));
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
@@ -1092,10 +1109,10 @@ if (gl_FragColor.a < .01) discard;
     // Use document coordinates plus the current scroll position to avoid layout-read lag.
     updateMemorySpawnOrigin();
     if (memoryScene.smileyVisible && time >= memoryScene.nextSpawnAt) {
-      const freeSlot = memoryScene.slots.find(slot => !slot.startedAt);
+      const freeSlot = memoryScene.slots.slice(0, memoryScene.capacity).find(slot => !slot.startedAt);
       if (freeSlot) {
         spawnMemory(freeSlot, time);
-        memoryScene.nextSpawnAt = time + memorySpawnInterval;
+        memoryScene.nextSpawnAt = time + memoryScene.spawnInterval;
       } else {
         memoryScene.nextSpawnAt = time + 100;
       }
