@@ -39,6 +39,10 @@
   const memoryGrabWidth = 240;
   const memoryExitDuration = 700;
   const memoryDissolveDuration = 900;
+  const myWayRaySpacing = 96;
+  const myWayFlatVerticalStretch = 1.8;
+  const myWayTypeParallaxSpeed = .6;
+  const myWayTypeStartOffset = -270;
   const memoryScene = {
     section: null, host: null, smiley: null, slots: [], smileyVisible: false,
     nextSpawnAt: 0, sequenceIndex: 0, photoIndex: 0, serial: 0, frame: 0,
@@ -50,6 +54,7 @@
     capacity: memoryMaximumSlots, spawnInterval: memorySpawnIntervalMin,
     lastFrameAt: 0, suppressClickUntil: 0
   };
+  const myWayTypeState = { section: null, contact: null, source: null, flat: null, sourceYear: null, plane: null };
   let paperThemeIndex = 0;
 
   class Noise {
@@ -470,6 +475,106 @@
     }
   }
 
+  function buildMyWayType() {
+    const source = $('[data-my-way-type]');
+    const section = $('.my-way');
+    const contact = $('.contact');
+    if (!source || !section || !contact) return;
+    const flat = source.cloneNode(true);
+    flat.classList.remove('my-way-type--perspective');
+    flat.classList.add('my-way-type--flat');
+    const flatPlane = $('.text-plane', flat);
+    if (flatPlane) flatPlane.classList.replace('text-plane', 'text-plane-flat');
+    flat.removeAttribute('data-my-way-type');
+    flat.setAttribute('aria-hidden', 'true');
+    contact.prepend(flat);
+    myWayTypeState.section = section;
+    myWayTypeState.contact = contact;
+    myWayTypeState.source = source;
+    myWayTypeState.flat = flat;
+    myWayTypeState.sourceYear = $('.my-way-type-line--year', source);
+  }
+
+  function updateMyWayType() {
+    const { section, source, flat } = myWayTypeState;
+    if (!section || !source || !flat) return;
+    const sectionTop = section.getBoundingClientRect().top + state.scrollY;
+    const rawScreenShift = myWayTypeStartOffset + (state.scrollY - sectionTop) * myWayTypeParallaxSpeed;
+    const minScreenShift = myWayTypeStartOffset - state.height * myWayTypeParallaxSpeed;
+    const maxScreenShift = myWayTypeStartOffset + section.offsetHeight * myWayTypeParallaxSpeed;
+    const screenShift = reducedMotion ? myWayTypeStartOffset : clamp(rawScreenShift, minScreenShift, maxScreenShift);
+    let planeShift = screenShift;
+    const plane = myWayTypeState.plane;
+    if (!reducedMotion && plane?.anchorDepth != null) {
+      const { perspective, sinAngle, visualDepth, anchorDepth } = plane;
+      const baseY = visualDepth * perspective / (perspective + anchorDepth * sinAngle);
+      const targetY = Math.max(1, baseY + screenShift);
+      const targetDepth = (visualDepth * perspective / targetY - perspective) / sinAngle;
+      planeShift = anchorDepth - targetDepth;
+    }
+    source.style.setProperty('--my-way-type-shift', `${planeShift.toFixed(2)}px`);
+    flat.style.setProperty('--my-way-type-shift', `${planeShift.toFixed(2)}px`);
+  }
+
+  function measureMyWayTextPlane() {
+    const { section, source, flat, sourceYear } = myWayTypeState;
+    if (!section || !source || !flat) return;
+    const smiley = $('.my-way-smiley', section);
+    if (!smiley) return;
+    const width = section.clientWidth;
+    const height = section.clientHeight;
+    const sectionRect = section.getBoundingClientRect();
+    const smileyRect = smiley.getBoundingClientRect();
+    const focalX = smileyRect.left + smileyRect.width / 2 - sectionRect.left;
+    const focalY = smileyRect.top + smileyRect.height / 2 - sectionRect.top;
+    const styles = getComputedStyle(section);
+    const perspective = Math.max(1, parseFloat(styles.getPropertyValue('--my-way-scene-perspective')) || 1100);
+    const angle = (parseFloat(styles.getPropertyValue('--my-way-plane-angle')) || 75) * Math.PI / 180;
+    const cosine = Math.max(.01, Math.cos(angle));
+    const sinAngle = Math.max(.01, Math.sin(angle));
+    const visualDepth = Math.max(1, height - focalY);
+    // Size the physical ground surface from the smiley-to-bottom distance;
+    // the camera-origin compensation below controls its projected horizon.
+    const planeDepth = visualDepth / cosine;
+    const planeFontSize = Math.max(96, Math.min(width * .36, planeDepth * .15));
+    // For a plane rotated by less than 90deg, its longitudinal vanishing point
+    // sits perspective * cot(angle) above the CSS camera origin. Offset the
+    // camera origin by the same amount so the projected vanishing point lands
+    // exactly on the smiley's geometric centre at every slider angle.
+    const cameraOriginY = focalY + perspective / Math.max(.01, Math.tan(angle));
+    section.style.setProperty('--my-way-focal-x', `${focalX.toFixed(2)}px`);
+    section.style.setProperty('--my-way-focal-y', `${focalY.toFixed(2)}px`);
+    section.style.setProperty('--my-way-camera-origin-y', `${cameraOriginY.toFixed(2)}px`);
+    [source, flat].forEach(type => {
+      type.style.setProperty('--my-way-text-plane-depth', `${planeDepth.toFixed(2)}px`);
+      type.style.setProperty('--my-way-plane-font-size', `${planeFontSize.toFixed(2)}px`);
+      type.style.setProperty('--my-way-plane-pad-far', `${(planeDepth * .1).toFixed(2)}px`);
+      type.style.setProperty('--my-way-plane-pad-near', `${(planeDepth * .018).toFixed(2)}px`);
+    });
+    // Continue the transformed surface into Contact as its 2D tangent at the
+    // near edge, then lengthen that flat copy vertically for the desired look.
+    flat.style.setProperty('--my-way-type-flat-top', `${(-planeDepth).toFixed(2)}px`);
+    const anchorCenterY = sourceYear ? sourceYear.offsetTop + sourceYear.offsetHeight / 2 : planeDepth;
+    const anchorDepth = Math.max(0, planeDepth - anchorCenterY);
+    myWayTypeState.plane = {
+      perspective, sinAngle, visualDepth, anchorDepth
+    };
+    updateMyWayFlatScale();
+  }
+
+  function updateMyWayFlatScale() {
+    const { flat, plane } = myWayTypeState;
+    if (!flat || !plane) return;
+    const flatScaleY = plane.visualDepth * plane.sinAngle / plane.perspective * myWayFlatVerticalStretch;
+    flat.style.setProperty('--my-way-type-flat-scale-y', `${clamp(flatScaleY, .05, 2.5).toFixed(5)}`);
+  }
+
+  function measureMyWayType() {
+    const { source, flat } = myWayTypeState;
+    if (!source || !flat) return;
+    measureMyWayTextPlane();
+  }
+
   function resizeMemoryScene() {
     const { host, renderer, camera } = memoryScene;
     if (!host || !renderer || !camera) return;
@@ -507,9 +612,8 @@
     const centerY = smileyRect.top + smileyRect.height / 2 - sectionRect.top;
     const width = sectionRect.width;
     const height = sectionRect.height;
-    const spacing = 96;
-    const horizontalSteps = Math.max(2, Math.round(width / spacing));
-    const verticalSteps = Math.max(2, Math.round(height / spacing));
+    const horizontalSteps = getMyWayRayColumns(width);
+    const verticalSteps = Math.max(2, Math.round(height / myWayRaySpacing));
     const segments = [];
     const addRay = (x, y) => segments.push(`M${centerX.toFixed(2)} ${centerY.toFixed(2)}L${x.toFixed(2)} ${y.toFixed(2)}`);
     for (let index = 0; index <= horizontalSteps; index += 1) {
@@ -1142,14 +1246,21 @@ if (gl_FragColor.a < .01) discard;
     if (memoryScene.smileyVisible || hasFlyingObjects) requestMemoryFrame();
   }
 
-  function gridPath(width, height, focalY = .36) {
-    const cx = width / 2, cy = height * focalY, cols = Math.max(8, Math.round(width / 105)), rows = 12;
-    let path = `M0 ${height}H${width}`;
+  function getMyWayRayColumns(width) {
+    return Math.max(2, Math.round(width / myWayRaySpacing));
+  }
+
+  function gridPath(width, height) {
+    const cols = getMyWayRayColumns(width);
+    const rows = Math.max(2, Math.round(height / myWayRaySpacing));
+    let path = '';
     for (let i = 0; i <= cols; i += 1) {
-      const x = i * width / cols; path += `M${x} 0L${cx} ${cy}M${x} ${height}L${cx} ${cy}`;
+      const x = i * width / cols;
+      path += `M${x} 0V${height}`;
     }
     for (let i = 0; i <= rows; i += 1) {
-      const y = i * height / rows; path += `M0 ${y}L${cx} ${cy}M${width} ${y}L${cx} ${cy}`;
+      const y = i * height / rows;
+      path += `M0 ${y}H${width}`;
     }
     return path;
   }
@@ -1187,12 +1298,15 @@ if (gl_FragColor.a < .01) discard;
 
   function resize() {
     state.width = innerWidth; state.height = innerHeight;
+    state.scrollY = scrollY;
+    updateMyWayType();
+    measureMyWayType();
     fitHeroTitle();
     measureWorkIntro();
     measureWorkTimeline();
     const contact = $('.contact');
     $('.contact-grid').setAttribute('viewBox', `0 0 ${contact.clientWidth} ${contact.clientHeight}`);
-    $('.contact-grid path').setAttribute('d', gridPath(contact.clientWidth, contact.clientHeight, .28));
+    $('.contact-grid path').setAttribute('d', gridPath(contact.clientWidth, contact.clientHeight));
     measureMemoryRays();
     resizeMemoryScene();
     updateScroll();
@@ -1642,7 +1756,7 @@ if (gl_FragColor.a < .01) discard;
   }
 
   function updateScroll() {
-    state.scrollY = scrollY; updateAboutBlock(); updateWork(); state.ticking = false;
+    state.scrollY = scrollY; updateAboutBlock(); updateWork(); updateMyWayType(); state.ticking = false;
   }
 
   function bind() {
@@ -1665,5 +1779,5 @@ if (gl_FragColor.a < .01) discard;
     contrast.addEventListener('click', () => applyPaperTheme(paperThemeIndex + 1));
   }
 
-  buildData(); buildWork(); buildMemories(); bind(); resize(); initHeroLetterMotion();
+  buildData(); buildWork(); buildMyWayType(); buildMemories(); bind(); resize(); initHeroLetterMotion();
 })();
