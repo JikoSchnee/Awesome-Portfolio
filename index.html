@@ -118,31 +118,45 @@
         <svg class="contact-grid" aria-hidden="true"><path></path></svg>
         <div class="contact-stage">
           <a class="contact-hit" href="mailto:hello@wodniack.dev" aria-label="Email hello@wodniack.dev">
-            <span class="go" aria-hidden="true">GO</span>
+            <span class="go" aria-hidden="true"><span class="go-label">GO</span></span>
             <span class="contact-portal" aria-hidden="true"><span class="contact-portal-stars"><i>✦</i><i>✦</i><i>✦</i><i>✦</i></span></span>
             <span class="contact-copy" aria-hidden="true"><span class="lets">Let<span>'</span>s</span><span class="rock">Rock</span><span class="email">hello@wodniack.dev</span></span>
           </a>
           <div class="contact-size-control" role="group" aria-label="Portal controls">
-            <label for="portal-size"><span>PORTAL SIZE</span><output id="portal-size-value" for="portal-size">40VW</output></label>
-            <input id="portal-size" type="range" min="40" max="76" step="1" value="40" aria-label="Adjust portal hover size" />
-            <label for="portal-acceleration"><span>ACCELERATION</span><output id="portal-acceleration-value" for="portal-acceleration">3.00X</output></label>
-            <input id="portal-acceleration" type="range" min="100" max="500" step="5" value="300" aria-label="Adjust portal expansion acceleration" />
-            <label for="portal-speed"><span>PORTAL SPEED</span><output id="portal-speed-value" for="portal-speed">2.05X</output></label>
-            <input id="portal-speed" type="range" min="50" max="250" step="5" value="205" aria-label="Adjust portal expansion speed" />
-            <label for="portal-spring"><span>GRID SPRING</span><output id="portal-spring-value" for="portal-spring">50%</output></label>
-            <input id="portal-spring" type="range" min="0" max="100" step="1" value="50" aria-label="Adjust grid spring overshoot" />
-            <label for="portal-grid-range"><span>GRID RANGE</span><output id="portal-grid-range-value" for="portal-grid-range">360%</output></label>
-            <input id="portal-grid-range" type="range" min="100" max="360" step="1" value="360" aria-label="Adjust grid deformation range" />
+            <label for="portal-size"><span>PORTAL SIZE</span><output id="portal-size-value" for="portal-size">48VW</output></label>
+            <input id="portal-size" type="range" min="40" max="76" step="1" value="48" aria-label="Adjust portal hover size" />
+            <label for="portal-exponent"><span>CURVE EXPONENT</span><output id="portal-exponent-value" for="portal-exponent">5.00</output></label>
+            <input id="portal-exponent" type="range" min="100" max="500" step="5" value="500" aria-label="Adjust portal hover curve exponent" />
+            <label for="portal-speed"><span>PORTAL SPEED</span><output id="portal-speed-value" for="portal-speed">1.35X</output></label>
+            <input id="portal-speed" type="range" min="50" max="250" step="5" value="135" aria-label="Adjust portal expansion speed" />
+          </div>
+          <div class="contact-wave-control" role="group" aria-label="Wave controls">
+            <p class="contact-control-heading">IDLE RIPPLE</p>
             <label for="portal-ripple-thickness"><span>RIPPLE THICKNESS</span><output id="portal-ripple-thickness-value" for="portal-ripple-thickness">30%</output></label>
             <input id="portal-ripple-thickness" type="range" min="5" max="30" step="1" value="30" aria-label="Adjust idle ripple thickness" />
             <label for="portal-ripple-sigma"><span>RIPPLE SIGMA</span><output id="portal-ripple-sigma-value" for="portal-ripple-sigma">0.92</output></label>
             <input id="portal-ripple-sigma" type="range" min="10" max="100" step="1" value="92" aria-label="Adjust idle ripple standard deviation" />
             <label for="portal-ripple-speed"><span>RIPPLE SPEED</span><output id="portal-ripple-speed-value" for="portal-ripple-speed">1.50X</output></label>
             <input id="portal-ripple-speed" type="range" min="50" max="240" step="5" value="150" aria-label="Adjust idle ripple speed" />
-            <label for="portal-spring-time"><span>SPRING TIME</span><output id="portal-spring-time-value" for="portal-spring-time">560MS</output></label>
-            <input id="portal-spring-time" type="range" min="360" max="620" step="10" value="560" aria-label="Adjust grid spring peak timing" />
-            <label for="portal-rebound-time"><span>REBOUND TIME</span><output id="portal-rebound-time-value" for="portal-rebound-time">900MS</output></label>
-            <input id="portal-rebound-time" type="range" min="80" max="900" step="10" value="900" aria-label="Adjust grid spring rebound duration" />
+            <label for="portal-go-grow-speed"><span>GO GROW SPEED</span><output id="portal-go-grow-speed-value" for="portal-go-grow-speed">1.65X</output></label>
+            <input id="portal-go-grow-speed" type="range" min="30" max="240" step="5" value="165" aria-label="Adjust idle GO grow speed" />
+            <label for="portal-go-shrink-speed"><span>GO SHRINK SPEED</span><output id="portal-go-shrink-speed-value" for="portal-go-shrink-speed">2.40X</output></label>
+            <input id="portal-go-shrink-speed" type="range" min="50" max="400" step="5" value="240" aria-label="Adjust idle GO shrink speed" />
+            <label for="portal-go-min-scale"><span>GO MIN SCALE</span><output id="portal-go-min-scale-value" for="portal-go-min-scale">81%</output></label>
+            <input id="portal-go-min-scale" type="range" min="20" max="90" step="1" value="81" aria-label="Adjust idle GO minimum scale" />
+            <p class="contact-control-heading">TRIGGER WAVE</p>
+            <label for="portal-wave-strength"><span>WAVE STRENGTH</span><output id="portal-wave-strength-value" for="portal-wave-strength">40%</output></label>
+            <input id="portal-wave-strength" type="range" min="0" max="100" step="1" value="40" aria-label="Adjust triggered wave strength" />
+            <label for="portal-wave-width"><span>WAVE WIDTH</span><output id="portal-wave-width-value" for="portal-wave-width">24%</output></label>
+            <input id="portal-wave-width" type="range" min="5" max="40" step="1" value="24" aria-label="Adjust triggered wave width" />
+            <label for="portal-wave-sigma"><span>WAVE SIGMA</span><output id="portal-wave-sigma-value" for="portal-wave-sigma">1.00</output></label>
+            <input id="portal-wave-sigma" type="range" min="10" max="100" step="1" value="100" aria-label="Adjust triggered wave standard deviation" />
+            <label for="portal-wave-speed"><span>WAVE SPEED</span><output id="portal-wave-speed-value" for="portal-wave-speed">2.00X</output></label>
+            <input id="portal-wave-speed" type="range" min="50" max="240" step="5" value="200" aria-label="Adjust triggered wave propagation speed" />
+            <label for="portal-wave-delay"><span>START TIME</span><output id="portal-wave-delay-value" for="portal-wave-delay">500MS</output></label>
+            <input id="portal-wave-delay" type="range" min="0" max="1200" step="20" value="500" aria-label="Adjust triggered wave start delay" />
+            <label for="portal-wave-range"><span>WAVE RANGE</span><output id="portal-wave-range-value" for="portal-wave-range">360%</output></label>
+            <input id="portal-wave-range" type="range" min="100" max="420" step="1" value="360" aria-label="Adjust triggered wave range" />
           </div>
         </div>
       </section>

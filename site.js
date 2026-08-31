@@ -44,7 +44,11 @@
   const contactPortalOpenDuration = 720;
   const contactPortalCloseDuration = 280;
   const contactIdleRippleDuration = 2800;
-  const contactIdleRippleCycle = 6200;
+  const contactIdleRippleRecoveryDuration = 220;
+  const contactGoGrowDuration = 2800;
+  const contactGoShrinkDuration = 420;
+  const contactTriggerWaveDuration = 1640;
+  const contactTriggerWaveRecoveryDuration = 220;
   let myWayTypeParallaxSpeed = 1.8;
   let myWayTypeStartOffset = 160;
   const memoryScene = {
@@ -62,9 +66,12 @@
   const contactPortalState = {
     section: null, stage: null, hit: null, grid: null, progress: 0, visualProgress: 0, target: 0, frame: 0,
     motionStartedAt: 0, motionDuration: 0, motionFrom: 0, motionVisualFrom: 0, motionOpening: false,
-    idleRippleProgress: 0, idleRippleFrame: 0, idleRippleStartedAt: 0, idleRippleVisible: false,
+    idleRippleProgress: 0, idleRippleRecoveryProgress: 0, idleRippleFrame: 0, idleRippleStartedAt: 0, idleRippleVisible: false, idleRippleCompleting: false,
+    triggerWaveProgress: 0, triggerWaveRecoveryProgress: 0, triggerWaveFrame: 0, triggerWaveStartedAt: 0, triggerWaveActive: false,
     pointerInside: false, focusInside: false, touchExpanded: false, controlActive: false,
-    acceleration: 3, portalSpeed: 2.05, spring: 50, gridRange: 360, rippleThickness: 30, rippleSigma: .92, rippleSpeed: 1.5, springTime: 560, reboundTime: 900, go: null, visual: null, sizeInput: null, sizeOutput: null, geometry: null
+    expansionExponent: 5, portalSpeed: 1.35, rippleThickness: 30, rippleSigma: .92, rippleSpeed: 1.5, goGrowSpeed: 1.65, goShrinkSpeed: 2.4, goMinScale: .81, goLabelScale: .81,
+    triggerWaveStrength: 40, triggerWaveWidth: 24, triggerWaveSigma: 1, triggerWaveSpeed: 2, triggerWaveDelay: 500, triggerWaveRange: 360,
+    go: null, visual: null, sizeInput: null, sizeOutput: null, geometry: null
   };
   let paperThemeIndex = 0;
 
@@ -1353,26 +1360,37 @@ if (gl_FragColor.a < .01) discard;
     const visual = $('.contact-portal', section);
     const sizeInput = $('#portal-size', section);
     const sizeOutput = $('#portal-size-value', section);
-    const accelerationInput = $('#portal-acceleration', section);
-    const accelerationOutput = $('#portal-acceleration-value', section);
+    const exponentInput = $('#portal-exponent', section);
+    const exponentOutput = $('#portal-exponent-value', section);
     const portalSpeedInput = $('#portal-speed', section);
     const portalSpeedOutput = $('#portal-speed-value', section);
-    const springInput = $('#portal-spring', section);
-    const springOutput = $('#portal-spring-value', section);
-    const gridRangeInput = $('#portal-grid-range', section);
-    const gridRangeOutput = $('#portal-grid-range-value', section);
     const rippleThicknessInput = $('#portal-ripple-thickness', section);
     const rippleThicknessOutput = $('#portal-ripple-thickness-value', section);
     const rippleSigmaInput = $('#portal-ripple-sigma', section);
     const rippleSigmaOutput = $('#portal-ripple-sigma-value', section);
     const rippleSpeedInput = $('#portal-ripple-speed', section);
     const rippleSpeedOutput = $('#portal-ripple-speed-value', section);
-    const springTimeInput = $('#portal-spring-time', section);
-    const springTimeOutput = $('#portal-spring-time-value', section);
-    const reboundTimeInput = $('#portal-rebound-time', section);
-    const reboundTimeOutput = $('#portal-rebound-time-value', section);
+    const goGrowSpeedInput = $('#portal-go-grow-speed', section);
+    const goGrowSpeedOutput = $('#portal-go-grow-speed-value', section);
+    const goShrinkSpeedInput = $('#portal-go-shrink-speed', section);
+    const goShrinkSpeedOutput = $('#portal-go-shrink-speed-value', section);
+    const goMinScaleInput = $('#portal-go-min-scale', section);
+    const goMinScaleOutput = $('#portal-go-min-scale-value', section);
+    const triggerWaveStrengthInput = $('#portal-wave-strength', section);
+    const triggerWaveStrengthOutput = $('#portal-wave-strength-value', section);
+    const triggerWaveWidthInput = $('#portal-wave-width', section);
+    const triggerWaveWidthOutput = $('#portal-wave-width-value', section);
+    const triggerWaveSigmaInput = $('#portal-wave-sigma', section);
+    const triggerWaveSigmaOutput = $('#portal-wave-sigma-value', section);
+    const triggerWaveSpeedInput = $('#portal-wave-speed', section);
+    const triggerWaveSpeedOutput = $('#portal-wave-speed-value', section);
+    const triggerWaveDelayInput = $('#portal-wave-delay', section);
+    const triggerWaveDelayOutput = $('#portal-wave-delay-value', section);
+    const triggerWaveRangeInput = $('#portal-wave-range', section);
+    const triggerWaveRangeOutput = $('#portal-wave-range-value', section);
     const sizeControl = $('.contact-size-control', section);
-    if (!section || !stage || !hit || !grid || !go || !visual || !sizeInput || !sizeOutput || !accelerationInput || !accelerationOutput || !portalSpeedInput || !portalSpeedOutput || !springInput || !springOutput || !gridRangeInput || !gridRangeOutput || !rippleThicknessInput || !rippleThicknessOutput || !rippleSigmaInput || !rippleSigmaOutput || !rippleSpeedInput || !rippleSpeedOutput || !springTimeInput || !springTimeOutput || !reboundTimeInput || !reboundTimeOutput || !sizeControl) return;
+    const waveControl = $('.contact-wave-control', section);
+    if (!section || !stage || !hit || !grid || !go || !visual || !sizeInput || !sizeOutput || !exponentInput || !exponentOutput || !portalSpeedInput || !portalSpeedOutput || !rippleThicknessInput || !rippleThicknessOutput || !rippleSigmaInput || !rippleSigmaOutput || !rippleSpeedInput || !rippleSpeedOutput || !goGrowSpeedInput || !goGrowSpeedOutput || !goShrinkSpeedInput || !goShrinkSpeedOutput || !goMinScaleInput || !goMinScaleOutput || !triggerWaveStrengthInput || !triggerWaveStrengthOutput || !triggerWaveWidthInput || !triggerWaveWidthOutput || !triggerWaveSigmaInput || !triggerWaveSigmaOutput || !triggerWaveSpeedInput || !triggerWaveSpeedOutput || !triggerWaveDelayInput || !triggerWaveDelayOutput || !triggerWaveRangeInput || !triggerWaveRangeOutput || !sizeControl || !waveControl) return;
     contactPortalState.section = section;
     contactPortalState.stage = stage;
     contactPortalState.hit = hit;
@@ -1394,41 +1412,64 @@ if (gl_FragColor.a < .01) discard;
       contactPortalState.pointerInside || contactPortalState.focusInside || contactPortalState.touchExpanded || contactPortalState.controlActive
     );
     hit.addEventListener('pointerenter', event => {
-      if (event.pointerType !== 'touch' && hasFinePointer()) { contactPortalState.pointerInside = true; sync(); }
+      if (event.pointerType !== 'touch' && hasFinePointer()) {
+        contactPortalState.pointerInside = true;
+        triggerContactWave();
+        sync();
+      }
     });
     hit.addEventListener('pointerleave', event => {
       if (event.pointerType !== 'touch' && hasFinePointer()) { contactPortalState.pointerInside = false; sync(); }
     });
-    hit.addEventListener('focus', () => { contactPortalState.focusInside = true; sync(); });
+    hit.addEventListener('focus', () => {
+      contactPortalState.focusInside = true;
+      triggerContactWave();
+      sync();
+    });
     hit.addEventListener('blur', () => { contactPortalState.focusInside = false; sync(); });
     sizeControl.addEventListener('pointerenter', () => { contactPortalState.controlActive = true; sync(); });
     sizeControl.addEventListener('pointerleave', () => { contactPortalState.controlActive = false; sync(); });
     sizeControl.addEventListener('focusin', () => { contactPortalState.controlActive = true; sync(); });
     sizeControl.addEventListener('focusout', () => { contactPortalState.controlActive = false; sync(); });
+    waveControl.addEventListener('pointerenter', () => { contactPortalState.controlActive = true; sync(); });
+    waveControl.addEventListener('pointerleave', () => { contactPortalState.controlActive = false; sync(); });
+    waveControl.addEventListener('focusin', () => { contactPortalState.controlActive = true; sync(); });
+    waveControl.addEventListener('focusout', () => { contactPortalState.controlActive = false; sync(); });
     sizeInput.addEventListener('input', () => setContactPortalSize(sizeInput.value));
-    accelerationInput.addEventListener('input', () => setContactPortalAcceleration(accelerationInput.value, accelerationOutput));
+    exponentInput.addEventListener('input', () => setContactPortalExponent(exponentInput.value, exponentOutput));
     portalSpeedInput.addEventListener('input', () => setContactPortalSpeed(portalSpeedInput.value, portalSpeedOutput));
-    springInput.addEventListener('input', () => setContactPortalSpring(springInput.value, springOutput));
-    gridRangeInput.addEventListener('input', () => setContactPortalGridRange(gridRangeInput.value, gridRangeOutput));
     rippleThicknessInput.addEventListener('input', () => setContactIdleRippleThickness(rippleThicknessInput.value, rippleThicknessOutput));
     rippleSigmaInput.addEventListener('input', () => setContactIdleRippleSigma(rippleSigmaInput.value, rippleSigmaOutput));
     rippleSpeedInput.addEventListener('input', () => setContactIdleRippleSpeed(rippleSpeedInput.value, rippleSpeedOutput));
-    springTimeInput.addEventListener('input', () => setContactPortalSpringTime(springTimeInput.value, springTimeOutput));
-    reboundTimeInput.addEventListener('input', () => setContactPortalReboundTime(reboundTimeInput.value, reboundTimeOutput));
+    goGrowSpeedInput.addEventListener('input', () => setContactGoGrowSpeed(goGrowSpeedInput.value, goGrowSpeedOutput));
+    goShrinkSpeedInput.addEventListener('input', () => setContactGoShrinkSpeed(goShrinkSpeedInput.value, goShrinkSpeedOutput));
+    goMinScaleInput.addEventListener('input', () => setContactGoMinScale(goMinScaleInput.value, goMinScaleOutput));
+    triggerWaveStrengthInput.addEventListener('input', () => setContactTriggerWaveStrength(triggerWaveStrengthInput.value, triggerWaveStrengthOutput));
+    triggerWaveWidthInput.addEventListener('input', () => setContactTriggerWaveWidth(triggerWaveWidthInput.value, triggerWaveWidthOutput));
+    triggerWaveSigmaInput.addEventListener('input', () => setContactTriggerWaveSigma(triggerWaveSigmaInput.value, triggerWaveSigmaOutput));
+    triggerWaveSpeedInput.addEventListener('input', () => setContactTriggerWaveSpeed(triggerWaveSpeedInput.value, triggerWaveSpeedOutput));
+    triggerWaveDelayInput.addEventListener('input', () => setContactTriggerWaveDelay(triggerWaveDelayInput.value, triggerWaveDelayOutput));
+    triggerWaveRangeInput.addEventListener('input', () => setContactTriggerWaveRange(triggerWaveRangeInput.value, triggerWaveRangeOutput));
     setContactPortalSize(sizeInput.value);
-    setContactPortalAcceleration(accelerationInput.value, accelerationOutput);
+    setContactPortalExponent(exponentInput.value, exponentOutput);
     setContactPortalSpeed(portalSpeedInput.value, portalSpeedOutput);
-    setContactPortalSpring(springInput.value, springOutput);
-    setContactPortalGridRange(gridRangeInput.value, gridRangeOutput);
     setContactIdleRippleThickness(rippleThicknessInput.value, rippleThicknessOutput);
     setContactIdleRippleSigma(rippleSigmaInput.value, rippleSigmaOutput);
     setContactIdleRippleSpeed(rippleSpeedInput.value, rippleSpeedOutput);
-    setContactPortalSpringTime(springTimeInput.value, springTimeOutput);
-    setContactPortalReboundTime(reboundTimeInput.value, reboundTimeOutput);
+    setContactGoGrowSpeed(goGrowSpeedInput.value, goGrowSpeedOutput);
+    setContactGoShrinkSpeed(goShrinkSpeedInput.value, goShrinkSpeedOutput);
+    setContactGoMinScale(goMinScaleInput.value, goMinScaleOutput);
+    setContactTriggerWaveStrength(triggerWaveStrengthInput.value, triggerWaveStrengthOutput);
+    setContactTriggerWaveWidth(triggerWaveWidthInput.value, triggerWaveWidthOutput);
+    setContactTriggerWaveSigma(triggerWaveSigmaInput.value, triggerWaveSigmaOutput);
+    setContactTriggerWaveSpeed(triggerWaveSpeedInput.value, triggerWaveSpeedOutput);
+    setContactTriggerWaveDelay(triggerWaveDelayInput.value, triggerWaveDelayOutput);
+    setContactTriggerWaveRange(triggerWaveRangeInput.value, triggerWaveRangeOutput);
     hit.addEventListener('click', event => {
       if (!matchMedia('(pointer:coarse)').matches || event.detail === 0 || contactPortalState.touchExpanded) return;
       event.preventDefault();
       contactPortalState.touchExpanded = true;
+      triggerContactWave();
       sync();
     });
     document.addEventListener('pointerdown', event => {
@@ -1448,12 +1489,12 @@ if (gl_FragColor.a < .01) discard;
     measureContactPortal();
   }
 
-  function setContactPortalAcceleration(value, output) {
-    const acceleration = clamp((Number(value) || 300) / 100, 1, 5);
-    contactPortalState.acceleration = acceleration;
+  function setContactPortalExponent(value, output) {
+    const exponent = clamp((Number(value) || 300) / 100, 1, 5);
+    contactPortalState.expansionExponent = exponent;
     if (!output) return;
-    output.value = `${acceleration.toFixed(2)}X`;
-    output.textContent = `${acceleration.toFixed(2)}X`;
+    output.value = exponent.toFixed(2);
+    output.textContent = exponent.toFixed(2);
   }
 
   function setContactPortalSpeed(value, output) {
@@ -1473,27 +1514,7 @@ if (gl_FragColor.a < .01) discard;
   }
 
   function getContactPortalOpenDuration(portal) {
-    return Math.max(contactPortalOpenDuration, portal.springTime + portal.reboundTime) / portal.portalSpeed;
-  }
-
-  function setContactPortalSpring(value, output) {
-    const requestedSpring = Number(value);
-    const spring = clamp(Number.isFinite(requestedSpring) ? requestedSpring : 50, 0, 100);
-    contactPortalState.spring = spring;
-    if (!output) return;
-    output.value = `${spring}%`;
-    output.textContent = `${spring}%`;
-  }
-
-  function setContactPortalGridRange(value, output) {
-    const requestedRange = Number(value);
-    const gridRange = clamp(Number.isFinite(requestedRange) ? requestedRange : 360, 100, 360);
-    contactPortalState.gridRange = gridRange;
-    if (output) {
-      output.value = `${gridRange}%`;
-      output.textContent = `${gridRange}%`;
-    }
-    renderContactGrid();
+    return contactPortalOpenDuration / portal.portalSpeed;
   }
 
   function setContactIdleRippleThickness(value, output) {
@@ -1525,31 +1546,95 @@ if (gl_FragColor.a < .01) discard;
     output.textContent = `${speed.toFixed(2)}X`;
   }
 
-  function setContactPortalSpringTime(value, output) {
-    const requestedTime = Number(value);
-    const springTime = clamp(Number.isFinite(requestedTime) ? requestedTime : 560, 360, 620);
-    contactPortalState.springTime = springTime;
+  function setContactGoGrowSpeed(value, output) {
+    const speed = clamp((Number(value) || 100) / 100, .3, 2.4);
+    contactPortalState.goGrowSpeed = speed;
     if (!output) return;
-    output.value = `${springTime}MS`;
-    output.textContent = `${springTime}MS`;
+    output.value = `${speed.toFixed(2)}X`;
+    output.textContent = `${speed.toFixed(2)}X`;
   }
 
-  function setContactPortalReboundTime(value, output) {
-    const requestedTime = Number(value);
-    const reboundTime = clamp(Number.isFinite(requestedTime) ? requestedTime : 900, 80, 900);
-    contactPortalState.reboundTime = reboundTime;
+  function setContactGoShrinkSpeed(value, output) {
+    const speed = clamp((Number(value) || 240) / 100, .5, 4);
+    contactPortalState.goShrinkSpeed = speed;
     if (!output) return;
-    output.value = `${reboundTime}MS`;
-    output.textContent = `${reboundTime}MS`;
+    output.value = `${speed.toFixed(2)}X`;
+    output.textContent = `${speed.toFixed(2)}X`;
+  }
+
+  function setContactGoMinScale(value, output) {
+    const scale = clamp((Number(value) || 58) / 100, .2, .9);
+    const portal = contactPortalState;
+    portal.goMinScale = scale;
+    if (!portal.idleRippleProgress) portal.goLabelScale = scale;
+    if (output) {
+      output.value = `${Math.round(scale * 100)}%`;
+      output.textContent = `${Math.round(scale * 100)}%`;
+    }
+    renderContactGoLabel();
+  }
+
+  function setContactTriggerWaveStrength(value, output) {
+    const strength = clamp(Number(value) || 0, 0, 100);
+    contactPortalState.triggerWaveStrength = strength;
+    if (!output) return;
+    output.value = `${strength}%`;
+    output.textContent = `${strength}%`;
+    renderContactGrid();
+  }
+
+  function setContactTriggerWaveWidth(value, output) {
+    const width = clamp(Number(value) || 18, 5, 40);
+    contactPortalState.triggerWaveWidth = width;
+    if (!output) return;
+    output.value = `${width}%`;
+    output.textContent = `${width}%`;
+    renderContactGrid();
+  }
+
+  function setContactTriggerWaveSigma(value, output) {
+    const sigma = clamp((Number(value) || 64) / 100, .1, 1);
+    contactPortalState.triggerWaveSigma = sigma;
+    if (!output) return;
+    output.value = sigma.toFixed(2);
+    output.textContent = sigma.toFixed(2);
+    renderContactGrid();
+  }
+
+  function setContactTriggerWaveSpeed(value, output) {
+    const speed = clamp((Number(value) || 120) / 100, .5, 2.4);
+    contactPortalState.triggerWaveSpeed = speed;
+    if (!output) return;
+    output.value = `${speed.toFixed(2)}X`;
+    output.textContent = `${speed.toFixed(2)}X`;
+  }
+
+  function setContactTriggerWaveDelay(value, output) {
+    const delay = clamp(Number(value) || 0, 0, 1200);
+    contactPortalState.triggerWaveDelay = delay;
+    if (!output) return;
+    output.value = `${delay}MS`;
+    output.textContent = `${delay}MS`;
+  }
+
+  function setContactTriggerWaveRange(value, output) {
+    const range = clamp(Number(value) || 360, 100, 420);
+    contactPortalState.triggerWaveRange = range;
+    if (!output) return;
+    output.value = `${range}%`;
+    output.textContent = `${range}%`;
+    renderContactGrid();
   }
 
   function setContactPortalExpanded(expanded) {
     const portal = contactPortalState;
     if (!portal.hit) return;
     const target = expanded ? 1 : 0;
+    // A hover never starts a new idle pulse. If it catches one already in
+    // flight, let that pulse finish so it can visibly layer with the trigger wave.
+    if (expanded && portal.target !== 1) portal.idleRippleCompleting = portal.idleRippleProgress > 0;
     if (portal.target === target && (portal.frame || portal.progress === target)) return;
     portal.target = target;
-    if (expanded) portal.idleRippleProgress = 0;
     portal.hit.classList.toggle('is-expanded', expanded);
     if (reducedMotion) {
       portal.progress = portal.target;
@@ -1589,6 +1674,8 @@ if (gl_FragColor.a < .01) discard;
     portal.idleRippleVisible = visible;
     if (!visible) {
       portal.idleRippleProgress = 0;
+      portal.idleRippleRecoveryProgress = 0;
+      portal.idleRippleCompleting = false;
       if (portal.idleRippleFrame) cancelAnimationFrame(portal.idleRippleFrame);
       portal.idleRippleFrame = 0;
       renderContactGrid();
@@ -1603,43 +1690,85 @@ if (gl_FragColor.a < .01) discard;
     portal.idleRippleFrame = 0;
     if (!portal.idleRippleVisible) return;
     const rippleDuration = contactIdleRippleDuration / portal.rippleSpeed;
-    const rippleCycle = contactIdleRippleCycle / portal.rippleSpeed;
-    const phase = (time - portal.idleRippleStartedAt) % rippleCycle;
-    const portalIsAnimating = portal.target !== 0 || portal.progress !== 0;
-    portal.idleRippleProgress = !portalIsAnimating && phase < rippleDuration
-      ? phase / rippleDuration
-      : 0;
+    const growDuration = contactGoGrowDuration / portal.goGrowSpeed;
+    const shrinkDuration = contactGoShrinkDuration / portal.goShrinkSpeed;
+    const fullRippleDuration = rippleDuration + contactIdleRippleRecoveryDuration;
+    const cycleDuration = growDuration + fullRippleDuration;
+    const phase = (time - portal.idleRippleStartedAt) % cycleDuration;
+    const portalIsClosed = portal.target === 0 && portal.progress === 0;
+    const canFinishCurrentRipple = portal.idleRippleCompleting;
+    const canAnimateIdle = portalIsClosed || canFinishCurrentRipple;
+    if (!canAnimateIdle) {
+      portal.idleRippleProgress = 0;
+      portal.idleRippleRecoveryProgress = 0;
+      portal.goLabelScale = portal.goMinScale;
+    } else if (phase < growDuration && canFinishCurrentRipple) {
+      // The caught ripple has reached its recovery boundary. Do not let the
+      // next idle cycle begin while the portal remains open.
+      portal.idleRippleProgress = 0;
+      portal.idleRippleRecoveryProgress = 0;
+      portal.idleRippleCompleting = false;
+      portal.goLabelScale = portal.goMinScale;
+    } else if (phase < growDuration) {
+      // GO grows at a constant rate. The idle wave begins on the exact frame
+      // it reaches its maximum, then the label quickly collapses.
+      portal.idleRippleProgress = 0;
+      portal.idleRippleRecoveryProgress = 0;
+      portal.goLabelScale = portal.goMinScale + ((1.2 - portal.goMinScale) * phase / growDuration);
+    } else {
+      const rippleElapsed = phase - growDuration;
+      portal.idleRippleProgress = clamp(rippleElapsed / rippleDuration);
+      portal.idleRippleRecoveryProgress = rippleElapsed > rippleDuration
+        ? clamp((rippleElapsed - rippleDuration) / contactIdleRippleRecoveryDuration)
+        : 0;
+      const shrinkProgress = clamp(rippleElapsed / shrinkDuration);
+      portal.goLabelScale = 1.2 + (portal.goMinScale - 1.2) * easeOutCubic(shrinkProgress);
+      if (canFinishCurrentRipple && rippleElapsed >= fullRippleDuration) portal.idleRippleCompleting = false;
+    }
+    renderContactGoLabel();
     renderContactGrid();
     portal.idleRippleFrame = requestAnimationFrame(animateContactIdleRipple);
   }
 
-  function contactPortalOpenCurve(value) {
+  function triggerContactWave() {
     const portal = contactPortalState;
-    const acceleration = portal.acceleration;
-    const spring = portal.spring;
-    const duration = Math.max(portal.motionDuration || contactPortalOpenDuration, 1);
-    const peakAt = clamp(portal.springTime / portal.portalSpeed / duration, .1, .96);
-    const settleAt = clamp((portal.springTime + portal.reboundTime) / portal.portalSpeed / duration, peakAt, 1);
-    // The grid gets three progressively smaller rebound cycles. The visible
-    // Portal itself remains on its own non-spring curve.
-    const springStrength = spring / 50;
-    const overshoot = 1 + springStrength * .3;
-    if (value < peakAt) {
-      const progress = value / peakAt;
-      return overshoot * Math.pow(progress, acceleration);
+    if (reducedMotion) return;
+    portal.triggerWaveStartedAt = performance.now();
+    portal.triggerWaveProgress = 0;
+    portal.triggerWaveRecoveryProgress = 0;
+    portal.triggerWaveActive = true;
+    if (!portal.triggerWaveFrame) portal.triggerWaveFrame = requestAnimationFrame(animateContactTriggerWave);
+    renderContactGrid();
+  }
+
+  function animateContactTriggerWave(time) {
+    const portal = contactPortalState;
+    portal.triggerWaveFrame = 0;
+    if (!portal.triggerWaveActive) return;
+    const elapsed = time - portal.triggerWaveStartedAt - portal.triggerWaveDelay;
+    const travelDuration = contactTriggerWaveDuration / portal.triggerWaveSpeed;
+    const totalDuration = travelDuration + contactTriggerWaveRecoveryDuration;
+    portal.triggerWaveProgress = elapsed > 0 ? clamp(elapsed / travelDuration) : 0;
+    portal.triggerWaveRecoveryProgress = elapsed > travelDuration
+      ? clamp((elapsed - travelDuration) / contactTriggerWaveRecoveryDuration)
+      : 0;
+    renderContactGrid();
+    if (elapsed < totalDuration) {
+      portal.triggerWaveFrame = requestAnimationFrame(animateContactTriggerWave);
+      return;
     }
-    if (value >= settleAt) return 1;
-    const progress = (value - peakAt) / (settleAt - peakAt);
-    const amplitude = (overshoot - 1) * Math.pow(1 - progress, 1.65);
-    return 1 + amplitude * Math.cos(progress * Math.PI * 6);
+    portal.triggerWaveActive = false;
+    portal.triggerWaveProgress = 0;
+    portal.triggerWaveRecoveryProgress = 0;
+    renderContactGrid();
+  }
+
+  function contactPortalOpenCurve(value) {
+    return Math.pow(value, contactPortalState.expansionExponent);
   }
 
   function contactPortalVisualCurve(value) {
-    const portal = contactPortalState;
-    const duration = Math.max(portal.motionDuration || contactPortalOpenDuration, 1);
-    const peakAt = clamp(portal.springTime / portal.portalSpeed / duration, .1, .96);
-    if (value >= peakAt) return 1;
-    return Math.pow(value / peakAt, portal.acceleration);
+    return Math.pow(value, contactPortalState.expansionExponent);
   }
 
   function easeOutCubic(value) {
@@ -1658,8 +1787,14 @@ if (gl_FragColor.a < .01) discard;
     portal.hit.style.setProperty('--portal-motion-opacity', visibleProgress.toFixed(5));
     portal.hit.style.setProperty('--portal-motion-scale', scale.toFixed(5));
     portal.hit.style.setProperty('--go-motion-opacity', (1 - visibleProgress).toFixed(5));
-    portal.hit.style.setProperty('--go-motion-scale', (1 - visibleProgress * .45).toFixed(5));
+    renderContactGoLabel();
     portal.hit.style.setProperty('--contact-hit-size', `${hitSize.toFixed(2)}px`);
+  }
+
+  function renderContactGoLabel() {
+    const portal = contactPortalState;
+    if (!portal.hit) return;
+    portal.hit.style.setProperty('--go-label-scale', portal.goLabelScale.toFixed(5));
   }
 
   function measureContactPortal() {
@@ -1684,14 +1819,14 @@ if (gl_FragColor.a < .01) discard;
     renderContactGrid();
   }
 
-  function contactGridPoint(x, y, geometry, progress, rippleProgress = 0) {
+  function contactGridPoint(x, y, geometry, progress, rippleProgress = 0, idleRecoveryProgress = 0, triggerWaveProgress = 0, triggerRecoveryProgress = 0) {
     if (!geometry) return [x, y];
     const dx = x - geometry.centerX;
     const dy = y - geometry.centerY;
     const distance = Math.hypot(dx, dy);
     if (!distance) return [x, y];
     let radialOffset = 0;
-    const influence = geometry.radius * (contactPortalState.gridRange / 100);
+    const influence = geometry.radius * 3.6;
     if (progress && distance < influence) {
       radialOffset += progress * geometry.radius * .56 * Math.pow(1 - distance / influence, 1.55);
     }
@@ -1709,34 +1844,51 @@ if (gl_FragColor.a < .01) discard;
       const sigma = contactPortalState.rippleSigma;
       if (front > 0 && Math.abs(delta) < sigma * 3.5) {
         const gaussian = Math.exp(-.5 * Math.pow(delta / sigma, 2));
-        const fading = Math.pow(1 - Math.min(front / maxDistance, 1), .38);
+        const propagationFade = .16 + .84 * Math.pow(1 - rippleProgress, .7);
+        const recoveryFade = 1 - easeOutCubic(idleRecoveryProgress);
+        const fading = propagationFade * recoveryFade;
         radialOffset += gaussian * geometry.gridSpacing * .38 * fading;
+      }
+    }
+    if (triggerWaveProgress) {
+      const range = geometry.radius * (contactPortalState.triggerWaveRange / 100);
+      const front = range * triggerWaveProgress;
+      const maximumWaveWidth = range * (contactPortalState.triggerWaveWidth / 100);
+      const waveWidth = Math.max(1, Math.min(maximumWaveWidth, front * .5));
+      const delta = (distance - front) / waveWidth;
+      const sigma = contactPortalState.triggerWaveSigma;
+      if (front > 0 && Math.abs(delta) < sigma * 3.5) {
+        const gaussian = Math.exp(-.5 * Math.pow(delta / sigma, 2));
+        const propagationFade = .16 + .84 * Math.pow(1 - triggerWaveProgress, .7);
+        const recoveryFade = 1 - easeOutCubic(triggerRecoveryProgress);
+        const fading = propagationFade * recoveryFade;
+        radialOffset += gaussian * geometry.gridSpacing * .82 * (contactPortalState.triggerWaveStrength / 100) * fading;
       }
     }
     return [x + dx / distance * radialOffset, y + dy / distance * radialOffset];
   }
 
-  function contactGridLine(x1, y1, x2, y2, geometry, progress, rippleProgress) {
+  function contactGridLine(x1, y1, x2, y2, geometry, progress, rippleProgress, idleRecoveryProgress, triggerWaveProgress, triggerRecoveryProgress) {
     const distance = Math.hypot(x2 - x1, y2 - y1);
     const steps = Math.max(1, Math.ceil(distance / 32));
     let path = '';
     for (let step = 0; step <= steps; step += 1) {
       const ratio = step / steps;
-      const [x, y] = contactGridPoint(x1 + (x2 - x1) * ratio, y1 + (y2 - y1) * ratio, geometry, progress, rippleProgress);
+      const [x, y] = contactGridPoint(x1 + (x2 - x1) * ratio, y1 + (y2 - y1) * ratio, geometry, progress, rippleProgress, idleRecoveryProgress, triggerWaveProgress, triggerRecoveryProgress);
       path += `${step ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`;
     }
     return path;
   }
 
-  function contactGridPath(width, height, geometry, progress, rippleProgress) {
+  function contactGridPath(width, height, geometry, progress, rippleProgress, idleRecoveryProgress, triggerWaveProgress, triggerRecoveryProgress) {
     const verticals = filledGridCoordinates(width, geometry.gridSpacing);
     const horizontals = topRectangularGridRows(height, geometry.centerY, geometry.gridSpacing);
     let path = '';
     verticals.forEach(x => {
-      path += contactGridLine(x, 0, x, height, geometry, progress, rippleProgress);
+      path += contactGridLine(x, 0, x, height, geometry, progress, rippleProgress, idleRecoveryProgress, triggerWaveProgress, triggerRecoveryProgress);
     });
     horizontals.forEach(y => {
-      path += contactGridLine(0, y, width, y, geometry, progress, rippleProgress);
+      path += contactGridLine(0, y, width, y, geometry, progress, rippleProgress, idleRecoveryProgress, triggerWaveProgress, triggerRecoveryProgress);
     });
     return path;
   }
@@ -1786,7 +1938,11 @@ if (gl_FragColor.a < .01) discard;
     const portal = contactPortalState;
     const { grid, geometry } = portal;
     if (!grid || !geometry) return;
-    grid.setAttribute('d', contactGridPath(geometry.width, geometry.height, geometry, portal.progress, portal.idleRippleProgress));
+    grid.setAttribute('d', contactGridPath(
+      geometry.width, geometry.height, geometry, portal.progress,
+      portal.idleRippleProgress, portal.idleRippleRecoveryProgress,
+      portal.triggerWaveProgress, portal.triggerWaveRecoveryProgress
+    ));
   }
 
   function fitHeroTitle(force = false) {
