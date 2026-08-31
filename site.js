@@ -419,6 +419,7 @@
       row.className = 'work-spread-row';
       row.dataset.row = String(rowIndex);
       for (let side = -copiesPerSide; side <= copiesPerSide; side += 1) {
+        if (side === 0) continue;
         const clone = document.createElement('span');
         clone.className = 'work-spread-letter';
         clone.textContent = letter;
@@ -2373,7 +2374,7 @@ if (gl_FragColor.a < .01) discard;
   function updateWorkSpread(progress, typeSize, loopDistance = 0, collapseProgress = 0) {
     const { spread, title } = workIntroState;
     if (!spread || !title) return;
-    const titleLetters = document.querySelectorAll('.work-title span');
+    const titleLetters = [...title.querySelectorAll('span')];
     const width = Math.max(spread.clientWidth, 1);
     const height = Math.max(spread.clientHeight, 1);
     const copyCount = Math.max(workIntroState.cloneCount, 2);
@@ -2384,14 +2385,15 @@ if (gl_FragColor.a < .01) discard;
     const outerArc = height * workOuterArcRatio;
     const innerArc = height * workInnerArcRatio;
     const eased = progress * progress * (3 - 2 * progress);
-    const easedCollapse = collapseProgress * collapseProgress * (3 - 2 * collapseProgress);
     const isCollapsing = collapseProgress > 0;
     const isLooping = loopDistance > 0 && progress >= 1 && !isCollapsing;
     spread.style.opacity = '1';
-    title.style.opacity = isCollapsing ? easedCollapse.toFixed(3) : (isLooping ? '0' : '1');
+    title.style.opacity = '1';
+    const titleGap = parseFloat(getComputedStyle(title).gap) || 0;
+    const rowStride = typeSize * workTitleLineHeight + titleGap;
     spread.querySelectorAll('.work-spread-row').forEach((row, rowIndex) => {
       const titleLetter = titleLetters[rowIndex];
-      const baseY = titleLetter ? titleLetter.offsetTop + titleLetter.offsetHeight / 2 - title.clientHeight / 2 : 0;
+      const baseY = (rowIndex - 1.5) * rowStride;
       const arc = rowIndex === 0 || rowIndex === 3 ? outerArc : innerArc;
       const arcDirection = rowIndex < 2 ? -1 : 1;
       row.querySelectorAll('.work-spread-letter').forEach(clone => {
@@ -2410,6 +2412,22 @@ if (gl_FragColor.a < .01) discard;
         clone.style.transform = 'none';
         clone.style.opacity = '1';
       });
+
+      if (titleLetter) {
+        const originalLoopPosition = wrapWorkTrackPosition(-offset, cycle);
+        const originalX = isCollapsing ? originalLoopPosition * eased : (isLooping ? originalLoopPosition : 0);
+        const originalDistance = clamp(Math.abs(originalX) / Math.max(copiesPerSide * step, 1));
+        const originalY = baseY + arcDirection * arc * originalDistance * originalDistance * eased;
+        const originalScale = 1 + workSpreadEdgeGrowth * originalDistance * originalDistance * eased;
+        const originalFontSize = typeSize * originalScale;
+        titleLetter.style.position = 'absolute';
+        titleLetter.style.left = `${Math.round(width / 2 + originalX - originalFontSize * .325)}px`;
+        titleLetter.style.top = `${Math.round(height / 2 + originalY - originalFontSize * workTitleLineHeight / 2)}px`;
+        titleLetter.style.fontSize = `${originalFontSize.toFixed(3)}px`;
+        titleLetter.style.zIndex = String(Math.round((1 - originalDistance) * 1001));
+        titleLetter.style.transform = 'none';
+        titleLetter.style.opacity = '1';
+      }
     });
   }
 
