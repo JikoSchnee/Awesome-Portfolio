@@ -25,6 +25,7 @@
   const workCardTailScreens = .35;
   const workCollapseScreens = workExpansionScreens;
   const workTimelineState = { expansion: 0, hold: 0, media: 0, cardTail: 0, collapse: 0, total: 0 };
+  const themeSurface = '#160000';
   const paperPalette = ['#39c5bb', '#f40c3f', '#fff2ed'];
   const memorySpawnSequence = ['photo', 'photo', 'photo', 'photo', 'star', 'photo', 'photo', 'photo', 'star'];
   const memoryMinimumSlots = 3;
@@ -77,7 +78,11 @@
   let paperThemeIndex = 0;
   let paperTransitionStage = null;
   let paperBaseLayer = null;
-  let paperTransitionSerial = 0;
+  let themeUsesDarkBackground = true;
+  let themeTransitionSerial = 0;
+  let themeRequestSerial = 0;
+  let themeTargetSignature = `${paperPalette[0]}:dark`;
+  const themeTransitionLayers = new Set();
 
   class Noise {
     constructor(seed = 0.314159) {
@@ -125,6 +130,7 @@
 
   class AWaves extends HTMLElement {
     connectedCallback() {
+      if (this.closest('.theme-transition-copy')) return;
       this.svg = this.querySelector('.js-svg');
       this.mouse = { x: -10, y: 0, lx: 0, ly: 0, sx: 0, sy: 0, v: 0, vs: 0, a: 0, set: false };
       this.lines = []; this.paths = []; this.noise = new Noise(0.314159);
@@ -465,7 +471,7 @@
     canvas.setAttribute('aria-hidden', 'true');
     host.append(canvas);
     try {
-      memoryScene.renderer = new T.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
+      memoryScene.renderer = new T.WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
     } catch {
       host.replaceChildren();
       return;
@@ -791,7 +797,25 @@
 
   function getMemoryColors() {
     const style = getComputedStyle(memoryScene.section);
-    return { paper: style.getPropertyValue('--paper').trim() || '#e1cab8', ink: style.getPropertyValue('--ink').trim() || '#160000' };
+    return { paper: style.getPropertyValue('--paper').trim() || '#160000', ink: style.getPropertyValue('--ink').trim() || '#39c5bb' };
+  }
+
+  function makeCaptionTexture(caption, ink, paper) {
+    const T = window.THREE;
+    const canvas = document.createElement('canvas');
+    canvas.width = 640;
+    canvas.height = 84;
+    const context = canvas.getContext('2d');
+    context.fillStyle = ink;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = paper;
+    context.font = '700 22px monospace';
+    context.textBaseline = 'middle';
+    context.fillText(caption.toUpperCase().slice(0, 52), 20, canvas.height / 2 + 1);
+    const texture = new T.CanvasTexture(canvas);
+    texture.colorSpace = T.SRGBColorSpace;
+    texture.userData.memoryCaption = true;
+    return texture;
   }
 
   function makeMemoryGridTexture(paper, ink) {
@@ -869,20 +893,7 @@ if (gl_FragColor.a < .01) discard;
 
   function makeCaptionMesh(caption, width, pixelScale, ink, paper, offsetY, cardThickness, dissolveUniforms) {
     const T = window.THREE;
-    const canvas = document.createElement('canvas');
-    canvas.width = 640;
-    canvas.height = 84;
-    const context = canvas.getContext('2d');
-    context.fillStyle = ink;
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = paper;
-    context.font = '700 22px monospace';
-    context.textBaseline = 'middle';
-    const label = caption.toUpperCase();
-    context.fillText(label.slice(0, 52), 20, canvas.height / 2 + 1);
-    const texture = new T.CanvasTexture(canvas);
-    texture.colorSpace = T.SRGBColorSpace;
-    texture.userData.memoryCaption = true;
+    const texture = makeCaptionTexture(caption, ink, paper);
     const captionHeight = 28 * pixelScale;
     const captionThickness = cardThickness;
     const edge = addMemoryDissolve(new T.MeshStandardMaterial({ color: ink, roughness: .48, metalness: .08 }), dissolveUniforms);
@@ -892,6 +903,7 @@ if (gl_FragColor.a < .01) discard;
       [edge, edge, edge, edge, front, edge]
     );
     mesh.position.set(0, -offsetY, 0);
+    mesh.userData.memoryCaption = { caption, edge, front, texture };
     return { mesh, height: captionHeight };
   }
 
@@ -924,7 +936,9 @@ if (gl_FragColor.a < .01) discard;
         bevelThickness: 1.5 * pixelScale
       });
       geometry.center();
-      root.add(new T.Mesh(geometry, new T.MeshBasicMaterial({ color: 0x000000 })));
+      const material = new T.MeshBasicMaterial({ color: ink });
+      root.add(new T.Mesh(geometry, material));
+      root.userData.refreshTheme = (_nextPaper, nextInk) => material.color.set(nextInk);
       return root;
     }
     const texture = memoryScene.textures.get(file);
@@ -934,7 +948,7 @@ if (gl_FragColor.a < .01) discard;
     const thickness = 10 * pixelScale;
     const sharedNoiseScale = { value: 1 / Math.max(18 * pixelScale, .001) };
     const sharedNoiseSeed = { value: seeded(memoryScene.serial + 910) * 8 };
-    const sharedEdgeColor = { value: new T.Color(0x000000) };
+    const sharedEdgeColor = { value: new T.Color(ink) };
     const dissolveUniforms = {
       uMemoryDissolve: { value: 0 },
       uMemoryNoiseScale: sharedNoiseScale,
@@ -967,10 +981,36 @@ if (gl_FragColor.a < .01) discard;
     grid.userData.memoryGrid = true;
     root.userData.gridMaterial = gridMaterial;
     root.userData.gridDissolveUniforms = gridDissolveUniforms;
+    root.userData.gridTexture = gridTexture;
     root.add(grid);
     const captionMesh = makeCaptionMesh(caption, width, pixelScale, ink, paper, height / 2, thickness, dissolveUniforms);
     root.add(captionMesh.mesh);
+    root.userData.refreshTheme = (nextPaper, nextInk) => {
+      edge.color.set(nextInk);
+      sharedEdgeColor.value.set(nextInk);
+      if (!texture) front.color.set(nextPaper);
+      const nextGridTexture = makeMemoryGridTexture(nextPaper, nextInk);
+      gridMaterial.map = nextGridTexture;
+      gridMaterial.needsUpdate = true;
+      root.userData.gridTexture?.dispose();
+      root.userData.gridTexture = nextGridTexture;
+      const caption = captionMesh.mesh.userData.memoryCaption;
+      if (caption) {
+        caption.edge.color.set(nextInk);
+        const nextCaptionTexture = makeCaptionTexture(caption.caption, nextInk, nextPaper);
+        caption.front.map = nextCaptionTexture;
+        caption.front.needsUpdate = true;
+        caption.texture?.dispose();
+        caption.texture = nextCaptionTexture;
+      }
+    };
     return root;
+  }
+
+  function refreshMemoryTheme() {
+    const { paper, ink } = getMemoryColors();
+    memoryScene.slots.forEach(slot => slot.model?.userData.refreshTheme?.(paper, ink));
+    memoryScene.renderer?.render(memoryScene.scene, memoryScene.camera);
   }
 
   function disposeMemoryModel(model) {
@@ -2224,6 +2264,7 @@ if (gl_FragColor.a < .01) discard;
   }
 
   function resize() {
+    clearThemeTransitionLayers();
     state.width = innerWidth; state.height = innerHeight;
     state.scrollY = scrollY;
     updateMyWayType();
@@ -2685,45 +2726,169 @@ if (gl_FragColor.a < .01) discard;
     (shell || document.body).prepend(paperTransitionStage);
   }
 
-  function createPaperTransition(from, to) {
-    ensurePaperTransitionStage();
-    paperBaseLayer.style.backgroundColor = to;
-    if (reducedMotion || from === to) return;
-
-    const serial = ++paperTransitionSerial;
-    const oldLayer = document.createElement('div');
-    const brush = document.createElement('div');
-    oldLayer.className = 'paper-transition-old';
-    brush.className = 'paper-transition-brush';
-    oldLayer.style.backgroundColor = from;
-    brush.style.backgroundColor = to;
-    oldLayer.style.zIndex = String(serial * 2);
-    brush.style.zIndex = String(serial * 2 + 1);
-    paperTransitionStage.append(oldLayer, brush);
-
-    brush.addEventListener('animationend', event => {
-      if (event.animationName !== 'paper-color-wipe') return;
-      oldLayer.remove();
-      brush.remove();
-    }, { once: true });
-    requestAnimationFrame(() => brush.classList.add('is-wiping'));
+  function clearThemeTransitionLayer(record) {
+    if (!record || !themeTransitionLayers.has(record)) return;
+    themeTransitionLayers.delete(record);
+    record.layer.remove();
   }
 
-  function applyPaperTheme(index, { animate = false } = {}) {
-    const previousColor = paperPalette[paperThemeIndex];
-    paperThemeIndex = ((index % paperPalette.length) + paperPalette.length) % paperPalette.length;
+  function getThemeState() {
     const color = paperPalette[paperThemeIndex];
-    document.documentElement.style.setProperty('--paper', color);
-    document.body.dataset.paperTheme = String(paperThemeIndex);
+    return {
+      color,
+      darkBackground: themeUsesDarkBackground,
+      ink: themeUsesDarkBackground ? color : themeSurface,
+      paper: themeUsesDarkBackground ? themeSurface : color
+    };
+  }
+
+  function getThemeSignature(theme) {
+    return `${theme.color}:${theme.darkBackground ? 'dark' : 'color'}`;
+  }
+
+  function applyLiveTheme(theme) {
+    document.documentElement.style.setProperty('--theme', theme.color);
+    document.documentElement.style.setProperty('--ink', theme.ink);
+    document.documentElement.style.setProperty('--paper', theme.paper);
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.content = color;
+    if (meta) meta.content = themeSurface;
+    paperBaseLayer.style.backgroundColor = theme.paper;
+    refreshMemoryTheme();
+  }
+
+  function clearThemeTransitionLayers() {
+    if (themeTransitionLayers.size) applyLiveTheme(getThemeState());
+    [...themeTransitionLayers].forEach(clearThemeTransitionLayer);
+  }
+
+  function syncThemeTransitionLayers() {
+    const shell = $('.site-shell');
+    if (!shell) return;
+    const shellRect = shell.getBoundingClientRect();
+    themeTransitionLayers.forEach(record => {
+      record.copy.style.left = `${shellRect.left}px`;
+      record.copy.style.top = `${shellRect.top}px`;
+      record.copy.style.width = `${shellRect.width}px`;
+      if (record.memorySnapshot) {
+        const canvasRect = record.memorySource?.getBoundingClientRect();
+        if (canvasRect) {
+          record.memorySnapshot.style.left = `${canvasRect.left}px`;
+          record.memorySnapshot.style.top = `${canvasRect.top}px`;
+          record.memorySnapshot.style.width = `${canvasRect.width}px`;
+          record.memorySnapshot.style.height = `${canvasRect.height}px`;
+        }
+      }
+    });
+  }
+
+  function createCanvasSnapshot(source) {
+    if (!source?.width || !source?.height) return null;
+    const snapshot = document.createElement('canvas');
+    snapshot.className = 'theme-transition-memory';
+    snapshot.width = source.width;
+    snapshot.height = source.height;
+    snapshot.setAttribute('aria-hidden', 'true');
+    const context = snapshot.getContext('2d');
+    if (!context) return null;
+    context.drawImage(source, 0, 0);
+    return snapshot;
+  }
+
+  function namespaceThemeCopyIds(copy, serial) {
+    const ids = new Map();
+    copy.querySelectorAll('[id]').forEach(element => {
+      const original = element.id;
+      const replacement = `theme-copy-${serial}-${original}`;
+      ids.set(original, replacement);
+      element.id = replacement;
+    });
+    if (!ids.size) return;
+    copy.querySelectorAll('*').forEach(element => {
+      ['href', 'xlink:href', 'mask', 'clip-path', 'filter', 'fill', 'stroke', 'for', 'aria-labelledby', 'aria-describedby'].forEach(attribute => {
+        const value = element.getAttribute(attribute);
+        if (!value) return;
+        let nextValue = value;
+        ids.forEach((replacement, original) => {
+          nextValue = nextValue.replaceAll(`#${original}`, `#${replacement}`);
+          if (attribute === 'for' && nextValue === original) nextValue = replacement;
+        });
+        if (nextValue !== value) element.setAttribute(attribute, nextValue);
+      });
+    });
+  }
+
+  function createThemeTransition(theme, requestSerial) {
+    const shell = $('.site-shell');
+    if (!shell) return;
+    const serial = ++themeTransitionSerial;
+    const layer = document.createElement('div');
+    layer.className = 'theme-transition-layer';
+    layer.setAttribute('aria-hidden', 'true');
+    const copy = shell.cloneNode(true);
+    copy.classList.add('theme-transition-copy');
+    copy.style.setProperty('--theme', theme.color);
+    copy.style.setProperty('--ink', theme.ink);
+    copy.style.setProperty('--paper', theme.paper);
+    copy.style.setProperty('color', 'var(--ink)');
+    const copyBaseLayer = $('.paper-base', copy);
+    if (copyBaseLayer) copyBaseLayer.style.backgroundColor = theme.paper;
+    copy.inert = true;
+    namespaceThemeCopyIds(copy, serial);
+    copy.querySelectorAll('a,button,input,textarea,select,summary').forEach(element => {
+      element.setAttribute('tabindex', '-1');
+      element.setAttribute('aria-hidden', 'true');
+    });
+    layer.append(copy);
+    const memorySource = $('.memory-canvas');
+    const memorySnapshot = createCanvasSnapshot(memorySource);
+    if (memorySnapshot) layer.append(memorySnapshot);
+    const record = { layer, copy, memorySource, memorySnapshot, serial, requestSerial, theme };
+    layer.style.zIndex = String(220 + record.serial);
+    themeTransitionLayers.add(record);
+    document.body.append(layer);
+    syncThemeTransitionLayers();
+    const finish = event => {
+      if (event.animationName !== 'theme-color-wipe' || event.target !== copy) return;
+      if (record.requestSerial === themeRequestSerial) applyLiveTheme(record.theme);
+      clearThemeTransitionLayer(record);
+    };
+    copy.addEventListener('animationend', finish);
+    copy.addEventListener('animationcancel', () => clearThemeTransitionLayer(record), { once: true });
+    requestAnimationFrame(() => layer.classList.add('is-wiping'));
+  }
+
+  function applyThemeSelection({ animate = false } = {}) {
+    const theme = getThemeState();
+    const signature = getThemeSignature(theme);
+    const previousSignature = themeTargetSignature;
+    themeTargetSignature = signature;
+    const requestSerial = ++themeRequestSerial;
     ensurePaperTransitionStage();
-    if (animate) createPaperTransition(previousColor, color);
-    else paperBaseLayer.style.backgroundColor = color;
+    document.body.dataset.paperTheme = String(paperThemeIndex);
+    document.body.dataset.themePolarity = theme.darkBackground ? 'dark' : 'color';
+    const polarity = $('.theme-polarity');
+    polarity?.setAttribute('aria-label', theme.darkBackground ? 'Use theme color as background' : 'Use black as background');
+    polarity?.setAttribute('aria-pressed', String(!theme.darkBackground));
+    if (animate && !reducedMotion && previousSignature !== signature) {
+      createThemeTransition(theme, requestSerial);
+      return;
+    }
+    clearThemeTransitionLayers();
+    applyLiveTheme(theme);
+  }
+
+  function applyPaperTheme(index, options = {}) {
+    paperThemeIndex = ((index % paperPalette.length) + paperPalette.length) % paperPalette.length;
+    applyThemeSelection(options);
+  }
+
+  function toggleThemePolarity(options = {}) {
+    themeUsesDarkBackground = !themeUsesDarkBackground;
+    applyThemeSelection(options);
   }
 
   function updateScroll() {
-    state.scrollY = scrollY; updateAboutBlock(); updateWork(); updateMyWayType(); state.ticking = false;
+    state.scrollY = scrollY; syncThemeTransitionLayers(); updateAboutBlock(); updateWork(); updateMyWayType(); state.ticking = false;
   }
 
   function bind() {
@@ -2741,9 +2906,11 @@ if (gl_FragColor.a < .01) discard;
       shellObserver.observe($('.site-shell'));
     }
     if (document.fonts?.ready) document.fonts.ready.then(resize);
-    const contrast = $('.contrast');
+    const themeColor = $('.theme-color');
+    const themePolarity = $('.theme-polarity');
     applyPaperTheme(0);
-    contrast.addEventListener('click', () => applyPaperTheme(paperThemeIndex + 1, { animate: true }));
+    themeColor?.addEventListener('click', () => applyPaperTheme(paperThemeIndex + 1, { animate: true }));
+    themePolarity?.addEventListener('click', () => toggleThemePolarity({ animate: true }));
     const memoryLink = $('.main-nav a[href="#memory"]');
     const memoryTarget = $('#memory');
     memoryLink?.addEventListener('click', event => {
