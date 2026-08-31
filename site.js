@@ -2684,7 +2684,8 @@ if (gl_FragColor.a < .01) discard;
     paperBaseLayer = document.createElement('div');
     paperBaseLayer.className = 'paper-base';
     paperTransitionStage.append(paperBaseLayer);
-    document.body.prepend(paperTransitionStage);
+    const shell = $('.site-shell');
+    (shell || document.body).prepend(paperTransitionStage);
   }
 
   function createPaperTransition(from, to) {
