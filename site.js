@@ -64,14 +64,15 @@
   };
   const myWayTypeState = { section: null, contact: null, source: null, flat: null, sourceYear: null, flatYear: null, plane: null };
   const contactPortalState = {
-    section: null, stage: null, hit: null, grid: null, progress: 0, visualProgress: 0, target: 0, frame: 0,
-    motionStartedAt: 0, motionDuration: 0, motionFrom: 0, motionVisualFrom: 0, motionOpening: false,
+    section: null, stage: null, hit: null, grid: null, progress: 0, visualProgress: 0, innerProgress: 0, target: 0, frame: 0,
+    motionStartedAt: 0, motionDuration: 0, motionInnerDuration: 0, motionInnerDelay: 0, motionFrom: 0, motionVisualFrom: 0, motionInnerFrom: 0, motionOpening: false, portalDelayTimer: 0,
     idleRippleProgress: 0, idleRippleRecoveryProgress: 0, idleRippleFrame: 0, idleRippleStartedAt: 0, idleRippleVisible: false, idleRippleCompleting: false,
     triggerWaveProgress: 0, triggerWaveRecoveryProgress: 0, triggerWaveFrame: 0, triggerWaveStartedAt: 0, triggerWaveActive: false,
+    goHoverScale: 1, goHoverFrom: 1, goHoverTarget: 1, goHoverStartedAt: 0, goHoverDuration: 0, goHoverFrame: 0,
     pointerInside: false, focusInside: false, touchExpanded: false, controlActive: false,
-    expansionExponent: 5, portalSpeed: 1.35, rippleThickness: 30, rippleSigma: .92, rippleSpeed: 1.5, goGrowSpeed: 1.65, goShrinkSpeed: 2.4, goMinScale: .81, goLabelScale: .81,
+    expansionExponent: 5, portalSpeed: 1.35, innerRingSpeed: .95, innerRingDelay: 40, portalDelay: 0, goHoverMaximumScale: 1.2, goHoverTime: 380, rippleThickness: 30, rippleSigma: .92, rippleSpeed: 1.5, goGrowSpeed: 1.65, goShrinkSpeed: 2.4, goMinScale: .81, copyMotionSpeed: 1.95, copyStagger: 80, trailDelay: 100, goLabelScale: .81, goLabelHoldScale: .81, goLabelFrozen: false,
     triggerWaveStrength: 40, triggerWaveWidth: 24, triggerWaveSigma: 1, triggerWaveSpeed: 2, triggerWaveDelay: 500, triggerWaveRange: 360,
-    go: null, visual: null, sizeInput: null, sizeOutput: null, geometry: null
+    go: null, visual: null, core: null, sizeInput: null, sizeOutput: null, geometry: null
   };
   let paperThemeIndex = 0;
 
@@ -1358,12 +1359,23 @@ if (gl_FragColor.a < .01) discard;
     const grid = $('.contact-grid path', section);
     const go = $('.go', hit);
     const visual = $('.contact-portal', section);
+    const core = $('.contact-portal-core', section);
     const sizeInput = $('#portal-size', section);
     const sizeOutput = $('#portal-size-value', section);
     const exponentInput = $('#portal-exponent', section);
     const exponentOutput = $('#portal-exponent-value', section);
     const portalSpeedInput = $('#portal-speed', section);
     const portalSpeedOutput = $('#portal-speed-value', section);
+    const innerRingSpeedInput = $('#inner-ring-speed', section);
+    const innerRingSpeedOutput = $('#inner-ring-speed-value', section);
+    const innerRingDelayInput = $('#inner-ring-delay', section);
+    const innerRingDelayOutput = $('#inner-ring-delay-value', section);
+    const portalDelayInput = $('#portal-delay', section);
+    const portalDelayOutput = $('#portal-delay-value', section);
+    const goHoverScaleInput = $('#go-hover-scale', section);
+    const goHoverScaleOutput = $('#go-hover-scale-value', section);
+    const goHoverTimeInput = $('#go-hover-time', section);
+    const goHoverTimeOutput = $('#go-hover-time-value', section);
     const rippleThicknessInput = $('#portal-ripple-thickness', section);
     const rippleThicknessOutput = $('#portal-ripple-thickness-value', section);
     const rippleSigmaInput = $('#portal-ripple-sigma', section);
@@ -1376,6 +1388,12 @@ if (gl_FragColor.a < .01) discard;
     const goShrinkSpeedOutput = $('#portal-go-shrink-speed-value', section);
     const goMinScaleInput = $('#portal-go-min-scale', section);
     const goMinScaleOutput = $('#portal-go-min-scale-value', section);
+    const copySpeedInput = $('#contact-copy-speed', section);
+    const copySpeedOutput = $('#contact-copy-speed-value', section);
+    const copyStaggerInput = $('#contact-copy-stagger', section);
+    const copyStaggerOutput = $('#contact-copy-stagger-value', section);
+    const trailDelayInput = $('#contact-trail-delay', section);
+    const trailDelayOutput = $('#contact-trail-delay-value', section);
     const triggerWaveStrengthInput = $('#portal-wave-strength', section);
     const triggerWaveStrengthOutput = $('#portal-wave-strength-value', section);
     const triggerWaveWidthInput = $('#portal-wave-width', section);
@@ -1390,13 +1408,14 @@ if (gl_FragColor.a < .01) discard;
     const triggerWaveRangeOutput = $('#portal-wave-range-value', section);
     const sizeControl = $('.contact-size-control', section);
     const waveControl = $('.contact-wave-control', section);
-    if (!section || !stage || !hit || !grid || !go || !visual || !sizeInput || !sizeOutput || !exponentInput || !exponentOutput || !portalSpeedInput || !portalSpeedOutput || !rippleThicknessInput || !rippleThicknessOutput || !rippleSigmaInput || !rippleSigmaOutput || !rippleSpeedInput || !rippleSpeedOutput || !goGrowSpeedInput || !goGrowSpeedOutput || !goShrinkSpeedInput || !goShrinkSpeedOutput || !goMinScaleInput || !goMinScaleOutput || !triggerWaveStrengthInput || !triggerWaveStrengthOutput || !triggerWaveWidthInput || !triggerWaveWidthOutput || !triggerWaveSigmaInput || !triggerWaveSigmaOutput || !triggerWaveSpeedInput || !triggerWaveSpeedOutput || !triggerWaveDelayInput || !triggerWaveDelayOutput || !triggerWaveRangeInput || !triggerWaveRangeOutput || !sizeControl || !waveControl) return;
+    if (!section || !stage || !hit || !grid || !go || !visual || !core || !sizeInput || !sizeOutput || !exponentInput || !exponentOutput || !portalSpeedInput || !portalSpeedOutput || !innerRingSpeedInput || !innerRingSpeedOutput || !innerRingDelayInput || !innerRingDelayOutput || !portalDelayInput || !portalDelayOutput || !goHoverScaleInput || !goHoverScaleOutput || !goHoverTimeInput || !goHoverTimeOutput || !rippleThicknessInput || !rippleThicknessOutput || !rippleSigmaInput || !rippleSigmaOutput || !rippleSpeedInput || !rippleSpeedOutput || !goGrowSpeedInput || !goGrowSpeedOutput || !goShrinkSpeedInput || !goShrinkSpeedOutput || !goMinScaleInput || !goMinScaleOutput || !copySpeedInput || !copySpeedOutput || !copyStaggerInput || !copyStaggerOutput || !trailDelayInput || !trailDelayOutput || !triggerWaveStrengthInput || !triggerWaveStrengthOutput || !triggerWaveWidthInput || !triggerWaveWidthOutput || !triggerWaveSigmaInput || !triggerWaveSigmaOutput || !triggerWaveSpeedInput || !triggerWaveSpeedOutput || !triggerWaveDelayInput || !triggerWaveDelayOutput || !triggerWaveRangeInput || !triggerWaveRangeOutput || !sizeControl || !waveControl) return;
     contactPortalState.section = section;
     contactPortalState.stage = stage;
     contactPortalState.hit = hit;
     contactPortalState.grid = grid;
     contactPortalState.go = go;
     contactPortalState.visual = visual;
+    contactPortalState.core = core;
     contactPortalState.sizeInput = sizeInput;
     contactPortalState.sizeOutput = sizeOutput;
     if (!reducedMotion) {
@@ -1438,12 +1457,20 @@ if (gl_FragColor.a < .01) discard;
     sizeInput.addEventListener('input', () => setContactPortalSize(sizeInput.value));
     exponentInput.addEventListener('input', () => setContactPortalExponent(exponentInput.value, exponentOutput));
     portalSpeedInput.addEventListener('input', () => setContactPortalSpeed(portalSpeedInput.value, portalSpeedOutput));
+    innerRingSpeedInput.addEventListener('input', () => setContactInnerRingSpeed(innerRingSpeedInput.value, innerRingSpeedOutput));
+    innerRingDelayInput.addEventListener('input', () => setContactInnerRingDelay(innerRingDelayInput.value, innerRingDelayOutput));
+    portalDelayInput.addEventListener('input', () => setContactPortalDelay(portalDelayInput.value, portalDelayOutput));
+    goHoverScaleInput.addEventListener('input', () => setContactGoHoverMaximumScale(goHoverScaleInput.value, goHoverScaleOutput));
+    goHoverTimeInput.addEventListener('input', () => setContactGoHoverTime(goHoverTimeInput.value, goHoverTimeOutput));
     rippleThicknessInput.addEventListener('input', () => setContactIdleRippleThickness(rippleThicknessInput.value, rippleThicknessOutput));
     rippleSigmaInput.addEventListener('input', () => setContactIdleRippleSigma(rippleSigmaInput.value, rippleSigmaOutput));
     rippleSpeedInput.addEventListener('input', () => setContactIdleRippleSpeed(rippleSpeedInput.value, rippleSpeedOutput));
     goGrowSpeedInput.addEventListener('input', () => setContactGoGrowSpeed(goGrowSpeedInput.value, goGrowSpeedOutput));
     goShrinkSpeedInput.addEventListener('input', () => setContactGoShrinkSpeed(goShrinkSpeedInput.value, goShrinkSpeedOutput));
     goMinScaleInput.addEventListener('input', () => setContactGoMinScale(goMinScaleInput.value, goMinScaleOutput));
+    copySpeedInput.addEventListener('input', () => setContactCopySpeed(copySpeedInput.value, copySpeedOutput));
+    copyStaggerInput.addEventListener('input', () => setContactCopyStagger(copyStaggerInput.value, copyStaggerOutput));
+    trailDelayInput.addEventListener('input', () => setContactTrailDelay(trailDelayInput.value, trailDelayOutput));
     triggerWaveStrengthInput.addEventListener('input', () => setContactTriggerWaveStrength(triggerWaveStrengthInput.value, triggerWaveStrengthOutput));
     triggerWaveWidthInput.addEventListener('input', () => setContactTriggerWaveWidth(triggerWaveWidthInput.value, triggerWaveWidthOutput));
     triggerWaveSigmaInput.addEventListener('input', () => setContactTriggerWaveSigma(triggerWaveSigmaInput.value, triggerWaveSigmaOutput));
@@ -1453,12 +1480,20 @@ if (gl_FragColor.a < .01) discard;
     setContactPortalSize(sizeInput.value);
     setContactPortalExponent(exponentInput.value, exponentOutput);
     setContactPortalSpeed(portalSpeedInput.value, portalSpeedOutput);
+    setContactInnerRingSpeed(innerRingSpeedInput.value, innerRingSpeedOutput);
+    setContactInnerRingDelay(innerRingDelayInput.value, innerRingDelayOutput);
+    setContactPortalDelay(portalDelayInput.value, portalDelayOutput);
+    setContactGoHoverMaximumScale(goHoverScaleInput.value, goHoverScaleOutput);
+    setContactGoHoverTime(goHoverTimeInput.value, goHoverTimeOutput);
     setContactIdleRippleThickness(rippleThicknessInput.value, rippleThicknessOutput);
     setContactIdleRippleSigma(rippleSigmaInput.value, rippleSigmaOutput);
     setContactIdleRippleSpeed(rippleSpeedInput.value, rippleSpeedOutput);
     setContactGoGrowSpeed(goGrowSpeedInput.value, goGrowSpeedOutput);
     setContactGoShrinkSpeed(goShrinkSpeedInput.value, goShrinkSpeedOutput);
     setContactGoMinScale(goMinScaleInput.value, goMinScaleOutput);
+    setContactCopySpeed(copySpeedInput.value, copySpeedOutput);
+    setContactCopyStagger(copyStaggerInput.value, copyStaggerOutput);
+    setContactTrailDelay(trailDelayInput.value, trailDelayOutput);
     setContactTriggerWaveStrength(triggerWaveStrengthInput.value, triggerWaveStrengthOutput);
     setContactTriggerWaveWidth(triggerWaveWidthInput.value, triggerWaveWidthOutput);
     setContactTriggerWaveSigma(triggerWaveSigmaInput.value, triggerWaveSigmaOutput);
@@ -1508,13 +1543,92 @@ if (gl_FragColor.a < .01) discard;
     if (portal.target === 1 && portal.frame && !reducedMotion) {
       portal.motionFrom = portal.progress;
       portal.motionVisualFrom = portal.visualProgress;
+      portal.motionInnerFrom = portal.innerProgress;
       portal.motionDuration = getContactPortalOpenDuration(portal);
+      portal.motionInnerDuration = getContactPortalInnerDuration(portal);
+      portal.motionInnerDelay = portal.innerRingDelay;
       portal.motionStartedAt = performance.now();
+    }
+  }
+
+  function setContactInnerRingSpeed(value, output) {
+    const speed = clamp((Number(value) || 75) / 100, .35, 1);
+    const portal = contactPortalState;
+    portal.innerRingSpeed = speed;
+    if (output) {
+      output.value = `${speed.toFixed(2)}X`;
+      output.textContent = `${speed.toFixed(2)}X`;
+    }
+    if (portal.target === 1 && portal.frame && !reducedMotion) {
+      portal.motionFrom = portal.progress;
+      portal.motionVisualFrom = portal.visualProgress;
+      portal.motionInnerFrom = portal.innerProgress;
+      portal.motionDuration = getContactPortalOpenDuration(portal);
+      portal.motionInnerDuration = getContactPortalInnerDuration(portal);
+      portal.motionInnerDelay = portal.innerRingDelay;
+      portal.motionStartedAt = performance.now();
+    }
+  }
+
+  function setContactInnerRingDelay(value, output) {
+    const delay = clamp(Number(value) || 0, 0, 800);
+    const portal = contactPortalState;
+    portal.innerRingDelay = delay;
+    if (output) {
+      output.value = `${delay}MS`;
+      output.textContent = `${delay}MS`;
+    }
+    if (portal.target === 1 && portal.frame && !reducedMotion) {
+      portal.motionFrom = portal.progress;
+      portal.motionVisualFrom = portal.visualProgress;
+      portal.motionInnerFrom = portal.innerProgress;
+      portal.motionDuration = getContactPortalOpenDuration(portal);
+      portal.motionInnerDuration = getContactPortalInnerDuration(portal);
+      portal.motionInnerDelay = delay;
+      portal.motionStartedAt = performance.now();
+    }
+  }
+
+  function setContactPortalDelay(value, output) {
+    const delay = clamp(Number(value) || 0, 0, 1200);
+    contactPortalState.portalDelay = delay;
+    if (!output) return;
+    output.value = `${delay}MS`;
+    output.textContent = `${delay}MS`;
+  }
+
+  function setContactGoHoverMaximumScale(value, output) {
+    const scale = clamp((Number(value) || 100) / 100, 1, 1.5);
+    const portal = contactPortalState;
+    portal.goHoverMaximumScale = scale;
+    if (output) {
+      output.value = `${Math.round(scale * 100)}%`;
+      output.textContent = `${Math.round(scale * 100)}%`;
+    }
+    if (portal.target === 1) setContactGoHoverScale(true);
+  }
+
+  function setContactGoHoverTime(value, output) {
+    const duration = clamp(Number(value) || 0, 0, 1600);
+    const portal = contactPortalState;
+    portal.goHoverTime = duration;
+    if (output) {
+      output.value = `${duration}MS`;
+      output.textContent = `${duration}MS`;
+    }
+    if (portal.target === 1 && portal.goHoverFrame && !reducedMotion) {
+      portal.goHoverFrom = portal.goHoverScale;
+      portal.goHoverStartedAt = performance.now();
+      portal.goHoverDuration = Math.max(duration, 1);
     }
   }
 
   function getContactPortalOpenDuration(portal) {
     return contactPortalOpenDuration / portal.portalSpeed;
+  }
+
+  function getContactPortalInnerDuration(portal) {
+    return getContactPortalOpenDuration(portal) / portal.innerRingSpeed;
   }
 
   function setContactIdleRippleThickness(value, output) {
@@ -1572,6 +1686,53 @@ if (gl_FragColor.a < .01) discard;
       output.textContent = `${Math.round(scale * 100)}%`;
     }
     renderContactGoLabel();
+  }
+
+  function setContactTrailDelay(value, output) {
+    const delay = clamp(Number(value) || 0, 0, 600);
+    const portal = contactPortalState;
+    portal.trailDelay = delay;
+    if (portal.hit) {
+      portal.hit.style.setProperty('--trail-delay-1', `${delay}ms`);
+      portal.hit.style.setProperty('--trail-delay-2', `${delay * 2}ms`);
+      portal.hit.style.setProperty('--trail-delay-3', `${delay * 3}ms`);
+    }
+    if (output) {
+      output.value = `${delay}MS`;
+      output.textContent = `${delay}MS`;
+    }
+  }
+
+  function setContactCopySpeed(value, output) {
+    const speed = clamp((Number(value) || 100) / 100, .5, 2.5);
+    const portal = contactPortalState;
+    const duration = 1800 / speed;
+    portal.copyMotionSpeed = speed;
+    if (portal.hit) {
+      portal.hit.style.setProperty('--copy-motion-duration', `${duration.toFixed(2)}ms`);
+      portal.hit.style.setProperty('--copy-motion-cycle', `${(duration * 2).toFixed(2)}ms`);
+    }
+    if (output) {
+      output.value = `${speed.toFixed(2)}X`;
+      output.textContent = `${speed.toFixed(2)}X`;
+    }
+  }
+
+  function setContactCopyStagger(value, output) {
+    const stagger = clamp(Number(value) || 0, 0, 800);
+    const portal = contactPortalState;
+    const firstDelay = -120;
+    portal.copyStagger = stagger;
+    if (portal.hit) {
+      portal.hit.style.setProperty('--copy-delay-1', `${firstDelay}ms`);
+      portal.hit.style.setProperty('--copy-delay-2', `${firstDelay - stagger}ms`);
+      portal.hit.style.setProperty('--copy-delay-3', `${firstDelay - stagger * 2}ms`);
+      portal.hit.style.setProperty('--copy-delay-4', `${firstDelay - stagger * 3}ms`);
+    }
+    if (output) {
+      output.value = `${stagger}MS`;
+      output.textContent = `${stagger}MS`;
+    }
   }
 
   function setContactTriggerWaveStrength(value, output) {
@@ -1632,21 +1793,47 @@ if (gl_FragColor.a < .01) discard;
     const target = expanded ? 1 : 0;
     // A hover never starts a new idle pulse. If it catches one already in
     // flight, let that pulse finish so it can visibly layer with the trigger wave.
-    if (expanded && portal.target !== 1) portal.idleRippleCompleting = portal.idleRippleProgress > 0;
-    if (portal.target === target && (portal.frame || portal.progress === target)) return;
+    if (expanded && portal.target !== 1) {
+      portal.idleRippleCompleting = portal.idleRippleProgress > 0;
+      portal.goLabelHoldScale = portal.goLabelScale;
+      portal.goLabelFrozen = true;
+    }
+    if (portal.target === target && (portal.frame || portal.portalDelayTimer || portal.progress === target)) return;
     portal.target = target;
+    if (!expanded) portal.goLabelFrozen = false;
+    setContactGoHoverScale(expanded);
     portal.hit.classList.toggle('is-expanded', expanded);
+    if (portal.portalDelayTimer) {
+      clearTimeout(portal.portalDelayTimer);
+      portal.portalDelayTimer = 0;
+    }
     if (reducedMotion) {
       portal.progress = portal.target;
       portal.visualProgress = portal.target;
+      portal.innerProgress = portal.target;
       renderContactPortalMotion();
       renderContactGrid();
       return;
     }
+    if (expanded && portal.portalDelay > 0) {
+      portal.portalDelayTimer = window.setTimeout(() => {
+        portal.portalDelayTimer = 0;
+        if (portal.target === 1) startContactPortalMotion(true);
+      }, portal.portalDelay);
+      return;
+    }
+    startContactPortalMotion(expanded);
+  }
+
+  function startContactPortalMotion(expanded) {
+    const portal = contactPortalState;
     portal.motionFrom = portal.progress;
     portal.motionVisualFrom = portal.visualProgress;
+    portal.motionInnerFrom = portal.innerProgress;
     portal.motionOpening = expanded;
     portal.motionDuration = expanded ? getContactPortalOpenDuration(portal) : contactPortalCloseDuration;
+    portal.motionInnerDuration = expanded ? getContactPortalInnerDuration(portal) : contactPortalCloseDuration / portal.innerRingSpeed;
+    portal.motionInnerDelay = expanded ? portal.innerRingDelay : 0;
     portal.motionStartedAt = performance.now();
     if (!portal.frame) portal.frame = requestAnimationFrame(animateContactGrid);
   }
@@ -1654,19 +1841,48 @@ if (gl_FragColor.a < .01) discard;
   function animateContactGrid(time) {
     const portal = contactPortalState;
     portal.frame = 0;
-    const duration = Math.max(portal.motionDuration, 1);
-    const elapsed = clamp((time - portal.motionStartedAt) / duration);
+    const motionElapsed = time - portal.motionStartedAt;
+    const elapsed = clamp(motionElapsed / Math.max(portal.motionDuration, 1));
+    const innerElapsed = clamp((motionElapsed - portal.motionInnerDelay) / Math.max(portal.motionInnerDuration, 1));
     const gridCurve = portal.motionOpening ? contactPortalOpenCurve(elapsed) : easeOutCubic(elapsed);
     const visualCurve = portal.motionOpening ? contactPortalVisualCurve(elapsed) : easeOutCubic(elapsed);
+    const innerCurve = portal.motionOpening ? contactPortalInnerCurve(innerElapsed) : easeOutCubic(innerElapsed);
     portal.progress = portal.motionFrom + (portal.target - portal.motionFrom) * gridCurve;
     portal.visualProgress = portal.motionVisualFrom + (portal.target - portal.motionVisualFrom) * visualCurve;
+    portal.innerProgress = portal.motionInnerFrom + (portal.target - portal.motionInnerFrom) * innerCurve;
     if (elapsed === 1) {
       portal.progress = portal.target;
       portal.visualProgress = portal.target;
     }
+    if (innerElapsed === 1) portal.innerProgress = portal.target;
     renderContactPortalMotion();
     renderContactGrid();
-    if (elapsed < 1) portal.frame = requestAnimationFrame(animateContactGrid);
+    if (elapsed < 1 || motionElapsed < portal.motionInnerDelay + portal.motionInnerDuration) portal.frame = requestAnimationFrame(animateContactGrid);
+  }
+
+  function setContactGoHoverScale(expanded) {
+    const portal = contactPortalState;
+    const target = expanded ? portal.goHoverMaximumScale : 1;
+    if (portal.goHoverTarget === target && (portal.goHoverFrame || portal.goHoverScale === target)) return;
+    portal.goHoverFrom = portal.goHoverScale;
+    portal.goHoverTarget = target;
+    portal.goHoverStartedAt = performance.now();
+    portal.goHoverDuration = expanded ? Math.max(portal.goHoverTime, 1) : contactPortalCloseDuration;
+    if (reducedMotion) {
+      portal.goHoverScale = target;
+      renderContactPortalMotion();
+      return;
+    }
+    if (!portal.goHoverFrame) portal.goHoverFrame = requestAnimationFrame(animateContactGoHover);
+  }
+
+  function animateContactGoHover(time) {
+    const portal = contactPortalState;
+    portal.goHoverFrame = 0;
+    const elapsed = clamp((time - portal.goHoverStartedAt) / Math.max(portal.goHoverDuration, 1));
+    portal.goHoverScale = portal.goHoverFrom + (portal.goHoverTarget - portal.goHoverFrom) * elapsed;
+    renderContactPortalMotion();
+    if (elapsed < 1) portal.goHoverFrame = requestAnimationFrame(animateContactGoHover);
   }
 
   function setContactIdleRippleVisibility(visible) {
@@ -1725,6 +1941,7 @@ if (gl_FragColor.a < .01) discard;
       portal.goLabelScale = 1.2 + (portal.goMinScale - 1.2) * easeOutCubic(shrinkProgress);
       if (canFinishCurrentRipple && rippleElapsed >= fullRippleDuration) portal.idleRippleCompleting = false;
     }
+    if (portal.goLabelFrozen && portal.target === 1) portal.goLabelScale = portal.goLabelHoldScale;
     renderContactGoLabel();
     renderContactGrid();
     portal.idleRippleFrame = requestAnimationFrame(animateContactIdleRipple);
@@ -1771,6 +1988,12 @@ if (gl_FragColor.a < .01) discard;
     return Math.pow(value, contactPortalState.expansionExponent);
   }
 
+  function contactPortalInnerCurve(value) {
+    if (value <= 0) return 0;
+    if (value >= 1) return 1;
+    return Math.pow(2, 10 * value - 10);
+  }
+
   function easeOutCubic(value) {
     return 1 - Math.pow(1 - value, 3);
   }
@@ -1779,14 +2002,23 @@ if (gl_FragColor.a < .01) discard;
     const portal = contactPortalState;
     if (!portal.hit) return;
     const visibleProgress = clamp(portal.visualProgress);
-    const scale = .1 + visibleProgress * .9;
+    const innerProgress = clamp(portal.innerProgress);
+    const scale = visibleProgress;
     const goSize = portal.go?.offsetWidth || 72;
     const portalSize = portal.visual?.offsetWidth || goSize;
     const ringAllowance = clamp(portalSize * .055, 18, 30);
-    const hitSize = Math.max(goSize, portalSize * scale + ringAllowance * visibleProgress);
-    portal.hit.style.setProperty('--portal-motion-opacity', visibleProgress.toFixed(5));
+    const coreSize = portal.core?.offsetWidth || portalSize;
+    const innerRingSize = coreSize * innerProgress + 2;
+    // The hit container clips its contents to a circle. Grow that clipping
+    // circle with GO as well, otherwise the scaled small circle is cut back
+    // to its original edge and the hover growth cannot be seen.
+    const hitSize = Math.max(goSize * portal.goHoverScale, portalSize * scale + ringAllowance * visibleProgress, innerRingSize);
+    portal.hit.style.setProperty('--portal-motion-opacity', visibleProgress > .001 ? '1' : '0');
     portal.hit.style.setProperty('--portal-motion-scale', scale.toFixed(5));
-    portal.hit.style.setProperty('--go-motion-opacity', (1 - visibleProgress).toFixed(5));
+    portal.hit.style.setProperty('--portal-core-motion-opacity', innerProgress > .001 ? '1' : '0');
+    portal.hit.style.setProperty('--portal-core-motion-scale', innerProgress.toFixed(5));
+    portal.hit.style.setProperty('--go-motion-opacity', '1');
+    portal.hit.style.setProperty('--go-hover-scale', portal.goHoverScale.toFixed(5));
     renderContactGoLabel();
     portal.hit.style.setProperty('--contact-hit-size', `${hitSize.toFixed(2)}px`);
   }
