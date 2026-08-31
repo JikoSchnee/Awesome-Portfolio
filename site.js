@@ -2744,6 +2744,14 @@ if (gl_FragColor.a < .01) discard;
     const contrast = $('.contrast');
     applyPaperTheme(0);
     contrast.addEventListener('click', () => applyPaperTheme(paperThemeIndex + 1, { animate: true }));
+    const memoryLink = $('.main-nav a[href="#memory"]');
+    const memoryTarget = $('#memory');
+    memoryLink?.addEventListener('click', event => {
+      if (!memoryTarget) return;
+      event.preventDefault();
+      memoryTarget.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'center', inline: 'center' });
+      history.replaceState(null, '', '#memory');
+    });
   }
 
   buildData(); buildWork(); buildMyWayType(); buildMyWayStretchControl(); buildMemories(); buildContactPortal(); bind(); resize(); initHeroLetterMotion();
