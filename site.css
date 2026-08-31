@@ -98,7 +98,7 @@ a-waves path{fill:none;stroke:var(--ink);stroke-width:1px;vector-effect:non-scal
 .my-way-lines{position:absolute;inset:0;z-index:0;overflow:hidden}
 .my-way-lines svg{display:block;width:100%;height:100%}
 .my-way-lines path{fill:none;stroke:var(--ink);stroke-width:1px;vector-effect:non-scaling-stroke}
-.my-way-lines .my-way-rays{opacity:.58}.my-way-lines .my-way-frame{stroke:var(--red);stroke-width:1.5px;opacity:1}
+.my-way-lines .my-way-rays{opacity:.58}
 .my-way-type{--my-way-type-shift:0px;position:absolute;z-index:3;inset:0;pointer-events:none}
 .my-way-type--perspective{perspective:var(--my-way-scene-perspective);perspective-origin:var(--my-way-focal-x,50%) var(--my-way-camera-origin-y,var(--my-way-focal-y,var(--vanishing-y)));transform-style:preserve-3d}
 .text-plane,.text-plane-flat{position:absolute;left:0;right:0;bottom:0;height:var(--my-way-text-plane-depth,2600px);transform-origin:50% 100%;transform-style:preserve-3d;overflow:visible;backface-visibility:visible;will-change:transform}
@@ -175,7 +175,7 @@ body.memory-is-grabbing,body.memory-is-grabbing *{cursor:grabbing!important;user
   .data-strip{padding:0 12px;gap:8px}.data-strip span{min-width:72px}
   .work-stage{--work-capsule-height:70vh;--work-capsule-radius:999px;--work-capsule-inset:8px}
   .work-card{width:74vw;border-width:4px}.work-card footer{font-size:5px;height:20px}
-  .my-way{--vanishing-y:44%;--my-way-scene-perspective:820px;--my-way-plane-angle:72deg}.my-way-stretch-control{left:12px;bottom:12px;width:min(190px,calc(100vw - 48px));padding:10px}
+  .my-way{--vanishing-y:44%;--my-way-scene-perspective:820px;--my-way-plane-angle:72deg;height:100vh;height:100svh}.my-way-stretch-control{left:12px;bottom:12px;width:min(190px,calc(100vw - 48px));padding:10px}
   .contact{height:calc(200vh - var(--footer-height));height:calc(200svh - var(--footer-height));min-height:0}.contact-stage{height:calc(100vh - var(--footer-height));height:calc(100svh - var(--footer-height))}.contact-hit{--portal-size:min(var(--portal-width),calc((100svh - var(--footer-height))*.92));--go-size:clamp(64px,17vw,86px)}.go{height:auto;font-size:clamp(35px,9vw,46px)}.contact-copy{font-size:clamp(64px,16vw,112px)}.email{font-size:9px}.contact-size-control{left:12px;bottom:12px;width:min(190px,calc(100vw - 48px));padding:10px}.contact-wave-control{display:none}
   .site-foot{height:63px}.footer-brand svg{width:30px;height:30px}
 }

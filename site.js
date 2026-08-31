@@ -749,10 +749,7 @@
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('class', 'my-way-rays');
     path.setAttribute('d', segments.join(''));
-    const frame = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    frame.setAttribute('class', 'my-way-frame');
-    frame.setAttribute('d', `M${frameLeft} ${frameTop}H${frameRight}V${frameBottom}H${frameLeft}Z`);
-    svg.append(path, frame);
+    svg.append(path);
     layer.replaceChildren(svg);
   }
 
