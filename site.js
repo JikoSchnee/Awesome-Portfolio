@@ -25,7 +25,7 @@
   const workCardTailScreens = .35;
   const workCollapseScreens = workExpansionScreens;
   const workTimelineState = { expansion: 0, hold: 0, media: 0, cardTail: 0, collapse: 0, total: 0 };
-  const paperPalette = ['#e1cab8', '#f40c3f', '#fff2ed'];
+  const paperPalette = ['#39c5bb', '#f40c3f', '#fff2ed'];
   const memorySpawnSequence = ['photo', 'photo', 'photo', 'photo', 'star', 'photo', 'photo', 'photo', 'star'];
   const memoryMinimumSlots = 3;
   const memoryMaximumSlots = 10;
@@ -75,6 +75,9 @@
     go: null, visual: null, core: null, sizeInput: null, sizeOutput: null, geometry: null
   };
   let paperThemeIndex = 0;
+  let paperTransitionStage = null;
+  let paperBaseLayer = null;
+  let paperTransitionSerial = 0;
 
   class Noise {
     constructor(seed = 0.314159) {
@@ -2659,13 +2662,52 @@ if (gl_FragColor.a < .01) discard;
     $('.about-link--br', connectors).setAttribute('d', `M${lowerRight} ${lowerTop}L${right} ${bottom}`);
   }
 
-  function applyPaperTheme(index) {
+  function ensurePaperTransitionStage() {
+    if (paperTransitionStage) return;
+    paperTransitionStage = document.createElement('div');
+    paperTransitionStage.className = 'paper-transition-stage';
+    paperTransitionStage.setAttribute('aria-hidden', 'true');
+    paperBaseLayer = document.createElement('div');
+    paperBaseLayer.className = 'paper-base';
+    paperTransitionStage.append(paperBaseLayer);
+    document.body.prepend(paperTransitionStage);
+  }
+
+  function createPaperTransition(from, to) {
+    ensurePaperTransitionStage();
+    paperBaseLayer.style.backgroundColor = to;
+    if (reducedMotion || from === to) return;
+
+    const serial = ++paperTransitionSerial;
+    const oldLayer = document.createElement('div');
+    const brush = document.createElement('div');
+    oldLayer.className = 'paper-transition-old';
+    brush.className = 'paper-transition-brush';
+    oldLayer.style.backgroundColor = from;
+    brush.style.backgroundColor = to;
+    oldLayer.style.zIndex = String(serial * 2);
+    brush.style.zIndex = String(serial * 2 + 1);
+    paperTransitionStage.append(oldLayer, brush);
+
+    brush.addEventListener('animationend', event => {
+      if (event.animationName !== 'paper-color-wipe') return;
+      oldLayer.remove();
+      brush.remove();
+    }, { once: true });
+    requestAnimationFrame(() => brush.classList.add('is-wiping'));
+  }
+
+  function applyPaperTheme(index, { animate = false } = {}) {
+    const previousColor = paperPalette[paperThemeIndex];
     paperThemeIndex = ((index % paperPalette.length) + paperPalette.length) % paperPalette.length;
     const color = paperPalette[paperThemeIndex];
-    document.body.style.setProperty('--paper', color);
+    document.documentElement.style.setProperty('--paper', color);
     document.body.dataset.paperTheme = String(paperThemeIndex);
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.content = color;
+    ensurePaperTransitionStage();
+    if (animate) createPaperTransition(previousColor, color);
+    else paperBaseLayer.style.backgroundColor = color;
   }
 
   function updateScroll() {
@@ -2689,7 +2731,7 @@ if (gl_FragColor.a < .01) discard;
     if (document.fonts?.ready) document.fonts.ready.then(resize);
     const contrast = $('.contrast');
     applyPaperTheme(0);
-    contrast.addEventListener('click', () => applyPaperTheme(paperThemeIndex + 1));
+    contrast.addEventListener('click', () => applyPaperTheme(paperThemeIndex + 1, { animate: true }));
   }
 
   buildData(); buildWork(); buildMyWayType(); buildMyWayStretchControl(); buildMemories(); buildContactPortal(); bind(); resize(); initHeroLetterMotion();
