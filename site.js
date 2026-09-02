@@ -3,7 +3,7 @@
   const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const state = { width: innerWidth, height: innerHeight, pointerX: .5, pointerY: .5, scrollY: 0, ticking: false };
-  const workIntroState = { outer: null, inner: null, dotField: null, title: null, typeLayer: null, typeInnerMask: null, scene: null, spread: null, measured: false, coverScale: 1, cloneCount: 0 };
+  const workIntroState = { outer: null, inner: null, dotField: null, title: null, typeLayer: null, typeInnerMask: null, scene: null, spread: null, measured: false, coverScale: 1, cloneCount: 0, stageHeight: 0, spreadWidth: 0, spreadHeight: 0, cards: [] };
   const workAnchorBuffer = 5;
   const workInnerSpeed = .8;
   const workTitleSpeed = .1;
@@ -24,9 +24,11 @@
   const workCardPerspectiveDegrees = 11;
   const workCardTailScreens = .35;
   const workCollapseScreens = workExpansionScreens;
-  const workTimelineState = { expansion: 0, hold: 0, media: 0, cardTail: 0, collapse: 0, total: 0 };
+  const workTimelineState = { expansion: 0, hold: 0, media: 0, cardTail: 0, collapse: 0, total: 0, top: 0, height: 0 };
   const themeSurface = '#160000';
-  const paperPalette = ['#39c5bb', '#f40c3f', '#fff2ed'];
+  const paperPalette = ['#39c5bb', '#facc15', '#f40c3f', '#fff2ed'];
+  const themePreferenceKey = 'aw-theme-polarity';
+  const systemPrefersDark = matchMedia('(prefers-color-scheme: dark)').matches;
   const memorySpawnSequence = ['photo', 'photo', 'photo', 'photo', 'star', 'photo', 'photo', 'photo', 'star'];
   const memoryMinimumSlots = 3;
   const memoryMaximumSlots = 10;
@@ -63,7 +65,8 @@
     capacity: memoryMaximumSlots, spawnInterval: memorySpawnIntervalMin,
     lastFrameAt: 0, suppressClickUntil: 0
   };
-  const myWayTypeState = { section: null, contact: null, source: null, flat: null, sourceYear: null, flatYear: null, plane: null };
+  const myWayTypeState = { section: null, contact: null, source: null, flat: null, sourceYear: null, flatYear: null, plane: null, scrollTop: 0, scrollHeight: 0 };
+  let educationScrollState = null;
   const contactPortalState = {
     section: null, stage: null, hit: null, grid: null, progress: 0, visualProgress: 0, innerProgress: 0, target: 0, frame: 0,
     motionStartedAt: 0, motionDuration: 0, motionInnerDuration: 0, motionInnerDelay: 0, motionFrom: 0, motionVisualFrom: 0, motionInnerFrom: 0, motionOpening: false, portalDelayTimer: 0,
@@ -75,14 +78,39 @@
     triggerWaveStrength: 40, triggerWaveWidth: 24, triggerWaveSigma: 1, triggerWaveSpeed: 2, triggerWaveDelay: 500, triggerWaveRange: 360,
     go: null, visual: null, core: null, sizeInput: null, sizeOutput: null, geometry: null
   };
+  const educationBurstState = {
+    layer: null, particles: [], frame: 0, lastFrameAt: 0, spread: .2, height: .3, cropTarget: 'cityu',
+    crops: { cityu: { zoom: 181, x: 20, y: -17 }, sustech: { zoom: 100, x: 0, y: 0 } }
+  };
+  const educationBurstMinimumCount = 10;
+  const educationBurstMaximumCount = 15;
   let paperThemeIndex = 0;
   let paperTransitionStage = null;
   let paperBaseLayer = null;
-  let themeUsesDarkBackground = true;
+  let themeUsesDarkBackground = getSavedThemePolarity() ?? systemPrefersDark;
   let themeTransitionSerial = 0;
   let themeRequestSerial = 0;
   let themeTargetSignature = `${paperPalette[0]}:dark`;
   const themeTransitionLayers = new Set();
+
+  function getSavedThemePolarity() {
+    try {
+      const preference = localStorage.getItem(themePreferenceKey);
+      if (preference === 'dark') return true;
+      if (preference === 'color') return false;
+    } catch {
+      // Private browsing or blocked storage should not prevent theme setup.
+    }
+    return null;
+  }
+
+  function saveThemePolarity() {
+    try {
+      localStorage.setItem(themePreferenceKey, themeUsesDarkBackground ? 'dark' : 'color');
+    } catch {
+      // Private browsing or blocked storage should not prevent theme switching.
+    }
+  }
 
   class Noise {
     constructor(seed = 0.314159) {
@@ -131,38 +159,62 @@
   class AWaves extends HTMLElement {
     connectedCallback() {
       if (this.closest('.theme-transition-copy')) return;
-      this.svg = this.querySelector('.js-svg');
+      this.canvas = this.querySelector('.js-wave-canvas');
+      this.context = this.canvas?.getContext('2d', { alpha: true, desynchronized: true });
+      if (!this.context) return;
       this.mouse = { x: -10, y: 0, lx: 0, ly: 0, sx: 0, sy: 0, v: 0, vs: 0, a: 0, set: false };
-      this.lines = []; this.paths = []; this.noise = new Noise(0.314159);
+      this.lines = []; this.noise = new Noise(0.314159); this.frame = 0; this.isVisible = true;
+      this.noiseStrength = .66; this.lineGap = 15;
+      this.tick = this.tick.bind(this);
       this.setSize(); this.setLines(); this.bindEvents();
-      requestAnimationFrame(this.tick.bind(this));
+      this.themeObserver = new MutationObserver(() => this.updateStroke());
+      this.themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+      this.visibilityObserver = new IntersectionObserver(([entry]) => {
+        this.isVisible = entry.isIntersecting;
+        if (this.isVisible && !this.frame && !reducedMotion) this.frame = requestAnimationFrame(this.tick);
+      });
+      this.visibilityObserver.observe(this);
+      this.frame = requestAnimationFrame(this.tick);
     }
+    disconnectedCallback() { cancelAnimationFrame(this.frame); this.themeObserver?.disconnect(); this.visibilityObserver?.disconnect(); }
     bindEvents() {
       window.addEventListener('resize', this.onResize.bind(this), { passive: true });
       window.addEventListener('mousemove', this.onMouseMove.bind(this), { passive: true });
       this.addEventListener('touchmove', this.onTouchMove.bind(this), { passive: false });
     }
     onResize() { this.setSize(); this.setLines(); }
+    setNoiseStrength(value) { this.noiseStrength = clamp(Number(value) / 100, 0, 1); }
+    setLineGap(value) { this.lineGap = clamp(Number(value), 8, 32); this.setLines(); }
     onMouseMove(e) { this.updateMousePosition(e.pageX, e.pageY); }
     onTouchMove(e) { e.preventDefault(); const touch = e.touches[0]; this.updateMousePosition(touch.clientX, touch.clientY); }
     updateMousePosition(x, y) {
       const { mouse } = this; mouse.x = x - this.bounding.left; mouse.y = y - this.bounding.top + window.scrollY;
       if (!mouse.set) { mouse.sx = mouse.x; mouse.sy = mouse.y; mouse.lx = mouse.x; mouse.ly = mouse.y; mouse.set = true; }
     }
-    setSize() { this.bounding = this.getBoundingClientRect(); this.svg.style.width = `${this.bounding.width}px`; this.svg.style.height = `${this.bounding.height}px`; }
+    updateStroke() { this.stroke = getComputedStyle(this).getPropertyValue('--ink').trim() || '#39c5bb'; }
+    setSize() {
+      this.bounding = this.getBoundingClientRect();
+      this.pixelRatio = Math.min(devicePixelRatio || 1, 1.5);
+      this.canvas.width = Math.max(1, Math.round(this.bounding.width * this.pixelRatio));
+      this.canvas.height = Math.max(1, Math.round(this.bounding.height * this.pixelRatio));
+      this.canvas.style.width = `${this.bounding.width}px`;
+      this.canvas.style.height = `${this.bounding.height}px`;
+      this.context.setTransform(this.pixelRatio, 0, 0, this.pixelRatio, 0, 0);
+      this.updateStroke();
+    }
     setLines() {
-      const { width, height } = this.bounding; this.lines = []; this.paths.forEach(path => path.remove()); this.paths = [];
-      const xGap = 10, yGap = 32, oWidth = width + 200, oHeight = height + 30;
+      const { width, height } = this.bounding; this.lines = [];
+      const xGap = this.lineGap, yGap = 32, oWidth = width + 200, oHeight = height + 30;
       const totalLines = Math.ceil(oWidth / xGap), totalPoints = Math.ceil(oHeight / yGap);
       const xStart = (width - xGap * totalLines) / 2, yStart = (height - yGap * totalPoints) / 2;
       for (let i = 0; i <= totalLines; i += 1) {
         const points = [];
         for (let j = 0; j <= totalPoints; j += 1) points.push({ x: xStart + xGap * i, y: yStart + yGap * j, wave: { x: 0, y: 0 }, cursor: { x: 0, y: 0, vx: 0, vy: 0 } });
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.classList.add('a__line', 'js-line'); this.svg.appendChild(path); this.paths.push(path); this.lines.push(points);
+        this.lines.push(points);
       }
     }
     movePoints(time) {
-      const { lines, mouse, noise } = this;
+      const { lines, mouse, noise, noiseStrength } = this;
       lines.forEach(points => points.forEach(p => {
         const flow = time * .000035;
         const noiseX = p.x * .002;
@@ -171,21 +223,69 @@
         const detail = noise.perlin2(noiseX * 1.7 - 31.4 - flow * .36, noiseY * 1.9 + 12.8 + flow * .28);
         const phase = noise.perlin2(noiseX * .37 + 63.2 + flow * .2, noiseY * .61 - 27.4 - flow * .15);
         const move = noise.perlin2(noiseX + warp * .72 + flow, noiseY + detail * .42 - flow * .38) * 9 + detail * 3 + phase * 1.4;
-        p.wave.x = Math.cos(move) * 32; p.wave.y = Math.sin(move) * 16;
+        p.wave.x = Math.cos(move) * 32 * noiseStrength; p.wave.y = Math.sin(move) * 16 * noiseStrength;
         const dx = p.x - mouse.sx, dy = p.y - mouse.sy, d = Math.hypot(dx, dy), l = Math.max(175, mouse.vs);
         if (d < l) { const s = 1 - d / l, f = Math.cos(d * .001) * s; p.cursor.vx += Math.cos(mouse.a) * f * l * mouse.vs * .00065; p.cursor.vy += Math.sin(mouse.a) * f * l * mouse.vs * .00065; }
         p.cursor.vx += (0 - p.cursor.x) * .005; p.cursor.vy += (0 - p.cursor.y) * .005; p.cursor.vx *= .925; p.cursor.vy *= .925; p.cursor.x += p.cursor.vx * 2; p.cursor.y += p.cursor.vy * 2; p.cursor.x = Math.min(100, Math.max(-100, p.cursor.x)); p.cursor.y = Math.min(100, Math.max(-100, p.cursor.y));
       }));
     }
-    moved(point, withCursorForce = true) { return { x: Math.round((point.x + point.wave.x + (withCursorForce ? point.cursor.x : 0)) * 10) / 10, y: Math.round((point.y + point.wave.y + (withCursorForce ? point.cursor.y : 0)) * 10) / 10 }; }
     drawLines() {
-      this.lines.forEach((points, lIndex) => { let p1 = this.moved(points[0], false), d = `M ${p1.x} ${p1.y}`; points.forEach((point, pIndex) => { const isLast = pIndex === points.length - 1; const a = this.moved(point, !isLast), b = this.moved(points[pIndex + 1] || points[points.length - 1], !isLast); d += `L ${a.x} ${a.y}`; void b; }); this.paths[lIndex].setAttribute('d', d); });
+      const { context, bounding, stroke } = this;
+      context.clearRect(0, 0, bounding.width, bounding.height);
+      context.strokeStyle = stroke;
+      context.lineWidth = 1;
+      context.beginPath();
+      this.lines.forEach(points => {
+        const first = points[0];
+        context.moveTo(
+          Math.round((first.x + first.wave.x) * 10) / 10,
+          Math.round((first.y + first.wave.y) * 10) / 10
+        );
+        points.forEach((point, index) => {
+          const includeCursor = index < points.length - 1;
+          const x = point.x + point.wave.x + (includeCursor ? point.cursor.x : 0);
+          const y = point.y + point.wave.y + (includeCursor ? point.cursor.y : 0);
+          context.lineTo(Math.round(x * 10) / 10, Math.round(y * 10) / 10);
+        });
+      });
+      context.stroke();
     }
     tick(time) {
-      const { mouse } = this; mouse.sx += (mouse.x - mouse.sx) * .1; mouse.sy += (mouse.y - mouse.sy) * .1; const dx = mouse.x - mouse.lx, dy = mouse.y - mouse.ly; mouse.v = Math.hypot(dx, dy); mouse.vs += (mouse.v - mouse.vs) * .1; mouse.vs = Math.min(100, mouse.vs); mouse.lx = mouse.x; mouse.ly = mouse.y; mouse.a = Math.atan2(dy, dx); this.style.setProperty('--x', `${mouse.sx}px`); this.style.setProperty('--y', `${mouse.sy}px`); this.movePoints(time); this.drawLines(); if (!reducedMotion) requestAnimationFrame(this.tick.bind(this));
+      this.frame = 0;
+      const { mouse } = this; mouse.sx += (mouse.x - mouse.sx) * .1; mouse.sy += (mouse.y - mouse.sy) * .1; const dx = mouse.x - mouse.lx, dy = mouse.y - mouse.ly; mouse.v = Math.hypot(dx, dy); mouse.vs += (mouse.v - mouse.vs) * .1; mouse.vs = Math.min(100, mouse.vs); mouse.lx = mouse.x; mouse.ly = mouse.y; mouse.a = Math.atan2(dy, dx); this.style.setProperty('--x', `${mouse.sx}px`); this.style.setProperty('--y', `${mouse.sy}px`); this.movePoints(time); this.drawLines(); if (!reducedMotion && this.isVisible) this.frame = requestAnimationFrame(this.tick);
     }
   }
   customElements.define('a-waves', AWaves);
+
+  function buildHeroWaveControl() {
+    const hero = $('.hero');
+    if (!hero) return;
+    const wave = $('a-waves', hero);
+    const noiseInput = $('#hero-wave-noise', hero);
+    const noiseOutput = $('#hero-wave-noise-value', hero);
+    const spacingInput = $('#hero-wave-spacing', hero);
+    const spacingOutput = $('#hero-wave-spacing-value', hero);
+    if (!wave || !noiseInput || !noiseOutput || !spacingInput || !spacingOutput) return;
+    const syncNoise = () => {
+      const value = clamp(Number(noiseInput.value), 0, 100);
+      wave.setNoiseStrength(value);
+      noiseOutput.textContent = `${Math.round(value)}%`;
+    };
+    const syncSpacing = () => {
+      const value = clamp(Number(spacingInput.value), 8, 32);
+      wave.setLineGap(value);
+      spacingOutput.textContent = `${Math.round(value)}PX`;
+    };
+    noiseInput.addEventListener('input', syncNoise);
+    spacingInput.addEventListener('input', syncSpacing);
+    syncNoise();
+    syncSpacing();
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(entries => hero.classList.toggle('is-wave-control-visible', entries.some(entry => entry.isIntersecting)), { threshold: .08 }).observe(hero);
+    } else {
+      hero.classList.add('is-wave-control-visible');
+    }
+  }
 
   class DataStrip extends HTMLElement {
     connectedCallback() {
@@ -324,7 +424,8 @@
       'CALIBRATING… WHAT EXACTLY? GOOD QUESTION'
     ];
     let status = 0;
-    if (!reducedMotion) setInterval(() => { status = (status + 1) % statuses.length; $('#loader-line').textContent = statuses[status]; }, 2500);
+    const loaderLine = $('#loader-line');
+    if (!reducedMotion && loaderLine) setInterval(() => { status = (status + 1) % statuses.length; loaderLine.textContent = statuses[status]; }, 2500);
 
     const binaryRows = [...document.querySelectorAll('.data-strip')].map(row => ({
       segments: [...row.querySelectorAll('span')].map(span => ({ span, bits: [], separatorCount: 0 }))
@@ -397,6 +498,7 @@
 
   function buildWork() {
     const host = $('#work-media');
+    if (!host) return;
     workItems.forEach(([file, href], index) => {
       const card = document.createElement('a');
       card.className = 'work-card'; card.href = href; card.target = href === '#' ? '_self' : '_blank'; card.rel = 'noreferrer';
@@ -595,10 +697,12 @@
   function updateMyWayType() {
     const { section, source, flat } = myWayTypeState;
     if (!section || !source || !flat) return;
-    const sectionTop = section.getBoundingClientRect().top + state.scrollY;
+    const sectionTop = myWayTypeState.scrollTop;
+    const sectionHeight = myWayTypeState.scrollHeight;
+    if (!sectionTop || !sectionHeight) return;
     const rawScreenShift = myWayTypeStartOffset + (state.scrollY - sectionTop) * myWayTypeParallaxSpeed;
     const minScreenShift = myWayTypeStartOffset - state.height * myWayTypeParallaxSpeed;
-    const maxScreenShift = myWayTypeStartOffset + section.offsetHeight * myWayTypeParallaxSpeed;
+    const maxScreenShift = myWayTypeStartOffset + sectionHeight * myWayTypeParallaxSpeed;
     const screenShift = reducedMotion ? myWayTypeStartOffset : clamp(rawScreenShift, minScreenShift, maxScreenShift);
     let planeShift = screenShift;
     const plane = myWayTypeState.plane;
@@ -639,6 +743,8 @@
     const cosine = Math.max(.01, Math.cos(angle));
     const sinAngle = Math.max(.01, Math.sin(angle));
     const visualDepth = Math.max(1, height - focalY);
+    myWayTypeState.scrollTop = sectionRect.top + state.scrollY;
+    myWayTypeState.scrollHeight = section.offsetHeight;
     // Size the physical ground surface from the smiley-to-bottom distance;
     // the camera-origin compensation below controls its projected horizon.
     const planeDepth = visualDepth / cosine;
@@ -1409,6 +1515,7 @@ if (gl_FragColor.a < .01) discard;
 
   function buildContactPortal() {
     const section = $('.contact');
+    if (!section) return;
     const stage = $('.contact-stage', section);
     const hit = $('.contact-hit', section);
     const grid = $('.contact-grid path', section);
@@ -2267,11 +2374,11 @@ if (gl_FragColor.a < .01) discard;
     clearThemeTransitionLayers();
     state.width = innerWidth; state.height = innerHeight;
     state.scrollY = scrollY;
-    updateMyWayType();
     measureMyWayType();
     fitHeroTitle();
     measureWorkIntro();
     measureWorkTimeline();
+    measureEducationBlock();
     measureContactPortal();
     measureMemoryRays();
     resizeMemoryScene();
@@ -2301,6 +2408,10 @@ if (gl_FragColor.a < .01) discard;
     const width = Math.max(inner.offsetWidth, 1);
     const height = Math.max(inner.offsetHeight, 1);
     const stage = $('.work-stage');
+    workIntroState.stageHeight = Math.max(stage?.clientHeight || state.height, 1);
+    workIntroState.spreadWidth = Math.max(spread.clientWidth, 1);
+    workIntroState.spreadHeight = Math.max(spread.clientHeight, 1);
+    workIntroState.cards = [...document.querySelectorAll('.work-card')].map(card => ({ card, width: card.offsetWidth }));
     workIntroState.coverScale = Math.max((stage?.clientWidth || state.width) * 1.04 / width, (stage?.clientHeight || state.height) * 1.04 / height);
     measureWorkAperture();
   }
@@ -2315,6 +2426,9 @@ if (gl_FragColor.a < .01) discard;
     workTimelineState.collapse = state.height * workCollapseScreens;
     workTimelineState.total = workAnchorBuffer + workTimelineState.expansion + workTimelineState.hold + workTimelineState.media + workTimelineState.cardTail + workTimelineState.collapse;
     section.style.height = `${state.height + workTimelineState.total}px`;
+    const rect = section.getBoundingClientRect();
+    workTimelineState.top = rect.top + state.scrollY;
+    workTimelineState.height = section.offsetHeight;
   }
 
   function measureWorkAperture() {
@@ -2389,11 +2503,10 @@ if (gl_FragColor.a < .01) discard;
 
   function updateWorkTypeMetrics(workScale, spreadProgress) {
     const { typeLayer } = workIntroState;
-    const stage = $('.work-stage');
     if (!typeLayer) return 118;
     const baseSize = Math.min(150, Math.max(118, state.width * .104));
     const preferredSize = baseSize * workScale;
-    const height = Math.max(stage?.clientHeight || state.height, 1);
+    const height = Math.max(workIntroState.stageHeight || state.height, 1);
     const gapRatio = workTitleGap / baseSize;
     const titleStack = workTitleLineHeight * 4 + gapRatio * 3;
     const edgeRowOffset = titleStack / 2 - workTitleLineHeight / 2;
@@ -2412,10 +2525,8 @@ if (gl_FragColor.a < .01) discard;
     const { title, spread } = workIntroState;
     if (!title || !spread) return;
     const rounded = Math.round(offset);
-    title.style.top = `${rounded}px`;
-    title.style.bottom = `${-rounded}px`;
-    spread.style.top = `${rounded}px`;
-    spread.style.bottom = `${-rounded}px`;
+    title.style.transform = `translate3d(0,${rounded}px,0)`;
+    spread.style.transform = `translate3d(0,${rounded}px,0)`;
   }
 
   function wrapWorkTrackPosition(position, period) {
@@ -2426,8 +2537,8 @@ if (gl_FragColor.a < .01) discard;
   function updateWorkSpread(progress, typeSize, loopDistance = 0, collapseProgress = 0) {
     const { spread, title } = workIntroState;
     if (!spread || !title) return;
-    const width = Math.max(spread.clientWidth, 1);
-    const height = Math.max(spread.clientHeight, 1);
+    const width = Math.max(workIntroState.spreadWidth, 1);
+    const height = Math.max(workIntroState.spreadHeight, 1);
     const copyCount = Math.max(workIntroState.cloneCount, 2);
     const copiesPerSide = copyCount / 2;
     const step = width * 1.1 / copyCount;
@@ -2440,7 +2551,8 @@ if (gl_FragColor.a < .01) discard;
     const isLooping = loopDistance > 0 && progress >= 1 && !isCollapsing;
     spread.style.opacity = '1';
     title.style.opacity = '1';
-    const titleGap = parseFloat(getComputedStyle(title).gap) || 0;
+    const baseSize = Math.min(150, Math.max(118, state.width * .104));
+    const titleGap = typeSize * workTitleGap / baseSize;
     const rowStride = typeSize * workTitleLineHeight + titleGap;
     spread.querySelectorAll('.work-spread-row').forEach((row, rowIndex) => {
       const baseY = (rowIndex - 1.5) * rowStride;
@@ -2484,7 +2596,6 @@ if (gl_FragColor.a < .01) discard;
       updateWorkTypeOffset(0);
       updateWorkTypeClip();
       updateWorkSpread(1, typeSize);
-      updateWorkAperture();
       return;
     }
     const innerShift = exitProgress > 0
@@ -2517,7 +2628,6 @@ if (gl_FragColor.a < .01) discard;
     updateWorkTypeOffset(titleOuterShift);
     updateWorkTypeClip();
     updateWorkSpread(expansionProgress, typeSize, loopDistance, collapseProgress);
-    updateWorkAperture();
   }
 
   function getWorkCardTravelProgress(progress) {
@@ -2546,9 +2656,11 @@ if (gl_FragColor.a < .01) discard;
   }
 
   function updateWork() {
-    const section = $('.work'); const rect = section.getBoundingClientRect();
-    const entryProgress = clamp(1 - rect.top / Math.max(state.height, 1));
-    const postDistance = Math.max(0, -rect.top - workAnchorBuffer);
+    const sectionTop = workTimelineState.top;
+    if (!sectionTop) return;
+    const viewportTop = sectionTop - state.scrollY;
+    const entryProgress = clamp(1 - viewportTop / Math.max(state.height, 1));
+    const postDistance = Math.max(0, -viewportTop - workAnchorBuffer);
     const expansionProgress = clamp(postDistance / Math.max(workTimelineState.expansion, 1));
     const mediaDistance = Math.max(0, postDistance - workTimelineState.expansion - workTimelineState.hold);
     const cardTailDistance = Math.max(0, mediaDistance - workTimelineState.media);
@@ -2566,15 +2678,16 @@ if (gl_FragColor.a < .01) discard;
     const cardTravelDistance = Math.max(state.height * workCardTravelScreens, 1);
     const cardStaggerDistance = state.height * workCardStaggerScreens;
     const rowOffset = state.width <= 900 ? 14 : 21;
-    const cardStates = [...document.querySelectorAll('.work-card')].map((card, index) => {
+    const cardStates = workIntroState.cards.map(({ card, width }, index) => {
       const local = (mediaDistance - index * cardStaggerDistance) / cardTravelDistance;
       const visible = mediaDistance > 0 && local >= 0 && local < 1;
       const progress = clamp(local);
       const travel = getWorkCardTravelProgress(progress);
       const reveal = getWorkCardReveal(progress);
-      const extent = 56 + card.offsetWidth / Math.max(state.width, 1) * 50;
+      const extent = 56 + width / Math.max(state.width, 1) * 50;
       return {
         card,
+        width,
         index,
         visible,
         reveal,
@@ -2587,7 +2700,7 @@ if (gl_FragColor.a < .01) discard;
     const visibleStates = cardStates.filter(cardState => cardState.visible);
     if (visibleStates.length === 2) {
       const [older, newer] = visibleStates;
-      const minimumGap = Math.max(24, Math.max(older.card.offsetWidth, newer.card.offsetWidth) / Math.max(state.width, 1) * 60);
+      const minimumGap = Math.max(24, Math.max(older.width, newer.width) / Math.max(state.width, 1) * 60);
       const gap = newer.x - older.x;
       if (gap < minimumGap) {
         const correction = (minimumGap - gap) / 2;
@@ -2608,14 +2721,328 @@ if (gl_FragColor.a < .01) discard;
     });
   }
 
-  function updateAboutBlock() {
-    const section = $('.about');
-    const block = $('.about-content-block');
+  function buildEducationSchoolReveals() {
+    const section = $('.education');
+    if (!section) return;
+    const cells = [...section.querySelectorAll('.education-school')];
+    if (!cells.length) return;
+    let observer;
+
+    const revealCell = cell => {
+      if (cell.classList.contains('is-revealed')) return;
+      const triggers = [...cell.querySelectorAll('.education-school-trigger')];
+      const cover = $('.education-school-cover', cell);
+      const unlock = () => {
+        cell.classList.add('is-interactive');
+        triggers.forEach(trigger => trigger.removeAttribute('tabindex'));
+      };
+
+      cell.classList.add('is-revealed');
+      if (reducedMotion || !cover) {
+        unlock();
+        return;
+      }
+      cover.addEventListener('transitionend', event => {
+        if (event.propertyName === 'transform' && cell.classList.contains('is-revealed')) unlock();
+      }, { once: true });
+    };
+
+    observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.target.dataset.educationRevealNeedsExit === 'true') {
+          if (!entry.isIntersecting || entry.intersectionRatio < .5) entry.target.dataset.educationRevealNeedsExit = 'false';
+          return;
+        }
+        if (!entry.isIntersecting || entry.intersectionRatio < .5) return;
+        revealCell(entry.target);
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: [.5] });
+
+    cells.forEach(cell => observer.observe(cell));
+
+    $('#education-recover', section)?.addEventListener('click', () => {
+      cells.forEach(cell => {
+        const triggers = cell.querySelectorAll('.education-school-trigger');
+        cell.classList.remove('is-interactive', 'is-revealed');
+        cell.dataset.educationRevealNeedsExit = 'true';
+        triggers.forEach(trigger => trigger.setAttribute('tabindex', '-1'));
+        observer.observe(cell);
+      });
+    });
+  }
+
+  function buildEducationLogoBursts() {
+    const section = $('.education');
+    if (!section || reducedMotion) return;
+    const triggers = section.querySelectorAll('.education-school-trigger');
+    if (!triggers.length) return;
+    const layer = document.createElement('div');
+    layer.className = 'education-logo-burst-layer';
+    layer.setAttribute('aria-hidden', 'true');
+    document.body.append(layer);
+    educationBurstState.layer = layer;
+    const spreadInput = $('#education-burst-spread', section);
+    const spreadOutput = $('#education-burst-spread-value', section);
+    const heightInput = $('#education-burst-height', section);
+    const heightOutput = $('#education-burst-height-value', section);
+    if (spreadInput && spreadOutput) {
+      const syncSpread = () => setEducationBurstSpread(spreadInput.value, spreadOutput);
+      spreadInput.addEventListener('input', syncSpread);
+      syncSpread();
+    }
+    if (heightInput && heightOutput) {
+      const syncHeight = () => setEducationBurstHeight(heightInput.value, heightOutput);
+      heightInput.addEventListener('input', syncHeight);
+      syncHeight();
+    }
+    const cropInputs = {
+      zoom: $('#education-logo-crop-zoom', section),
+      x: $('#education-logo-crop-x', section),
+      y: $('#education-logo-crop-y', section)
+    };
+    const cropOutputs = {
+      zoom: $('#education-logo-crop-zoom-value', section),
+      x: $('#education-logo-crop-x-value', section),
+      y: $('#education-logo-crop-y-value', section)
+    };
+    const cropPreview = $('#education-logo-crop-preview-mark', section);
+    const cropTargetButtons = [...section.querySelectorAll('[data-education-crop-target]')];
+    const syncCropPanel = () => {
+      const crop = educationBurstState.crops[educationBurstState.cropTarget];
+      Object.entries(cropInputs).forEach(([key, input]) => { if (input) input.value = String(crop[key]); });
+      if (cropOutputs.zoom) cropOutputs.zoom.textContent = `${crop.zoom}%`;
+      if (cropOutputs.x) cropOutputs.x.textContent = `${crop.x}%`;
+      if (cropOutputs.y) cropOutputs.y.textContent = `${crop.y}%`;
+      cropTargetButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.educationCropTarget === educationBurstState.cropTarget)));
+      renderEducationLogoCropPreview(cropPreview);
+    };
+    const syncCrop = () => {
+      const crop = educationBurstState.crops[educationBurstState.cropTarget];
+      crop.zoom = clamp(Number(cropInputs.zoom?.value), 50, 200);
+      crop.x = clamp(Number(cropInputs.x?.value), -50, 50);
+      crop.y = clamp(Number(cropInputs.y?.value), -50, 50);
+      syncCropPanel();
+      educationBurstState.particles
+        .filter(particle => particle.school === educationBurstState.cropTarget)
+        .forEach(particle => applyEducationLogoCrop(particle.element, particle.school));
+    };
+    Object.values(cropInputs).forEach(input => input?.addEventListener('input', syncCrop));
+    cropTargetButtons.forEach(button => button.addEventListener('click', () => {
+      educationBurstState.cropTarget = button.dataset.educationCropTarget;
+      syncCropPanel();
+    }));
+    syncCropPanel();
+    const setControlVisibility = visible => section.classList.toggle('is-burst-control-visible', visible);
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(entries => setControlVisibility(entries.some(entry => entry.isIntersecting)), { threshold: .08 }).observe(section);
+    } else {
+      setControlVisibility(true);
+    }
+    const hasFinePointer = () => matchMedia('(hover:hover) and (pointer:fine)').matches;
+    triggers.forEach(trigger => {
+      trigger.addEventListener('pointerenter', event => {
+        if (event.pointerType !== 'touch' && hasFinePointer()) triggerEducationBurst(trigger);
+      });
+      trigger.addEventListener('focus', () => triggerEducationBurst(trigger));
+      trigger.addEventListener('click', event => {
+        if (event.detail === 0 || matchMedia('(pointer:coarse)').matches) triggerEducationBurst(trigger);
+      });
+    });
+  }
+
+  function setEducationBurstSpread(value, output) {
+    const percentage = clamp(Number(value), 1, 100);
+    educationBurstState.spread = percentage / 100;
+    if (output) output.textContent = `${Math.round(percentage)}%`;
+  }
+
+  function setEducationBurstHeight(value, output) {
+    const percentage = clamp(Number(value), 1, 100);
+    educationBurstState.height = percentage / 100;
+    if (output) output.textContent = `${Math.round(percentage)}%`;
+  }
+
+  function triggerEducationLogoBurst(trigger) {
+    const layer = educationBurstState.layer;
+    if (!layer || reducedMotion) return;
+    const now = performance.now();
+    const lastBurstAt = Number(trigger.dataset.educationBurstAt || 0);
+    if (now - lastBurstAt < 180) return;
+    trigger.dataset.educationBurstAt = String(now);
+    const rect = trigger.getBoundingClientRect();
+    const school = trigger.dataset.educationLogo;
+    const centerX = rect.left + rect.width * .5;
+    const centerY = rect.top + rect.height * .5;
+    const particleCount = educationBurstMinimumCount + Math.floor(Math.random() * (educationBurstMaximumCount - educationBurstMinimumCount + 1));
+    for (let index = 0; index < particleCount; index += 1) {
+      const variant = createEducationBurstVariant();
+      const particle = createEducationLogoParticle(school, variant, centerX, centerY);
+      if (particle) educationBurstState.particles.push(particle);
+    }
+    if (!educationBurstState.frame) {
+      educationBurstState.lastFrameAt = now;
+      educationBurstState.frame = requestAnimationFrame(animateEducationLogoBursts);
+    }
+  }
+
+  function triggerEducationBurst(trigger) {
+    if (trigger.dataset.educationLogo) {
+      triggerEducationLogoBurst(trigger);
+      return;
+    }
+    triggerEducationRankBurst(trigger);
+  }
+
+  function triggerEducationRankBurst(trigger) {
+    const layer = educationBurstState.layer;
+    if (!layer || reducedMotion) return;
+    const now = performance.now();
+    const lastBurstAt = Number(trigger.dataset.educationBurstAt || 0);
+    if (now - lastBurstAt < 180) return;
+    trigger.dataset.educationBurstAt = String(now);
+    const rect = trigger.getBoundingClientRect();
+    const centerX = rect.left + rect.width * .5;
+    const centerY = rect.top + rect.height * .5;
+    const particleCount = educationBurstMinimumCount + Math.floor(Math.random() * (educationBurstMaximumCount - educationBurstMinimumCount + 1));
+    for (let index = 0; index < particleCount; index += 1) {
+      const variant = createEducationBurstVariant();
+      const particle = createEducationRankParticle(trigger.dataset.educationRank, variant, centerX, centerY);
+      if (particle) educationBurstState.particles.push(particle);
+    }
+    if (!educationBurstState.frame) {
+      educationBurstState.lastFrameAt = now;
+      educationBurstState.frame = requestAnimationFrame(animateEducationLogoBursts);
+    }
+  }
+
+  function createEducationBurstVariant() {
+    // Random upper-hemisphere launch angles create a different left/right parabola every time.
+    const spread = educationBurstState.spread;
+    const angleRange = .35 + spread * 1.45;
+    const launchAngle = (Math.random() - .5) * angleRange;
+    const gravity = 1380 + Math.random() * 520;
+    const maximumRise = 60 + educationBurstState.height * 440;
+    const rise = maximumRise * (.5 + Math.random() * .5);
+    const verticalSpeed = Math.sqrt(2 * gravity * rise);
+    return {
+      size: 30 + Math.round(Math.random() * 66),
+      offsetX: (Math.random() - .5) * 120 * spread,
+      offsetY: (Math.random() - .5) * 38,
+      velocityX: Math.tan(launchAngle) * verticalSpeed,
+      velocityY: -verticalSpeed,
+      gravity,
+      rotation: -35 + Math.random() * 70,
+      spin: -320 + Math.random() * 640
+    };
+  }
+
+  function createEducationLogoParticle(school, variant, centerX, centerY) {
+    const layer = educationBurstState.layer;
+    if (!layer || !school) return null;
+    const element = document.createElement('span');
+    element.className = `education-logo-burst education-logo-burst--${school}`;
+    element.style.width = `${variant.size}px`;
+    element.style.height = `${variant.size}px`;
+    applyEducationLogoCrop(element, school);
+    layer.append(element);
+    return {
+      element,
+      school,
+      x: centerX + variant.offsetX,
+      y: centerY + variant.offsetY,
+      velocityX: variant.velocityX,
+      velocityY: variant.velocityY,
+      gravity: variant.gravity,
+      rotation: variant.rotation,
+      spin: variant.spin,
+      width: variant.size,
+      height: variant.size,
+      size: variant.size
+    };
+  }
+
+  function createEducationRankParticle(rank, variant, centerX, centerY) {
+    const layer = educationBurstState.layer;
+    if (!layer || !rank) return null;
+    const element = document.createElement('span');
+    const label = Math.random() < .5 ? 'QS' : rank;
+    const height = Math.round(variant.size * .72);
+    const width = Math.round(height * (label === 'QS' ? 1.5 : 2.25));
+    element.className = 'education-logo-burst education-rank-burst';
+    element.textContent = label;
+    element.style.width = `${width}px`;
+    element.style.height = `${height}px`;
+    element.style.setProperty('--rank-burst-size', `${height}px`);
+    layer.append(element);
+    return {
+      element,
+      x: centerX + variant.offsetX,
+      y: centerY + variant.offsetY,
+      velocityX: variant.velocityX,
+      velocityY: variant.velocityY,
+      gravity: variant.gravity,
+      rotation: variant.rotation,
+      spin: variant.spin,
+      width,
+      height,
+      size: Math.max(width, height)
+    };
+  }
+
+  function applyEducationLogoCrop(element, school) {
+    const crop = educationBurstState.crops[school];
+    if (!crop) return;
+    if (school === 'sustech') {
+      element.style.setProperty('--logo-crop-scale', `${(3.88 * crop.zoom).toFixed(2)}%`);
+      element.style.setProperty('--logo-crop-height', `${crop.zoom}%`);
+      element.style.setProperty('--logo-crop-x', `${crop.x}%`);
+      element.style.setProperty('--logo-crop-y', `${50 + crop.y}%`);
+      return;
+    }
+    element.style.setProperty('--logo-crop-scale', `${crop.zoom}%`);
+    element.style.setProperty('--logo-crop-x', `${50 + crop.x}%`);
+    element.style.setProperty('--logo-crop-y', `${50 + crop.y}%`);
+  }
+
+  function renderEducationLogoCropPreview(preview) {
+    if (!preview) return;
+    const school = educationBurstState.cropTarget;
+    preview.className = `education-logo-crop-preview-mark education-logo-burst--${school}`;
+    applyEducationLogoCrop(preview, school);
+  }
+
+  function animateEducationLogoBursts(time) {
+    const burst = educationBurstState;
+    burst.frame = 0;
+    const delta = Math.min((time - burst.lastFrameAt) / 1000, .05);
+    burst.lastFrameAt = time;
+    burst.particles = burst.particles.filter(particle => {
+      const particleWidth = particle.width || particle.size;
+      const particleHeight = particle.height || particle.size;
+      particle.velocityY += particle.gravity * delta;
+      particle.x += particle.velocityX * delta;
+      particle.y += particle.velocityY * delta;
+      particle.rotation += particle.spin * delta;
+      particle.element.style.transform = `translate3d(${(particle.x - particleWidth / 2).toFixed(2)}px,${(particle.y - particleHeight / 2).toFixed(2)}px,0) rotate(${particle.rotation.toFixed(2)}deg)`;
+      const outsideViewport = particle.velocityY > 0 && (particle.x + particleWidth / 2 < 0
+        || particle.x - particleWidth / 2 > innerWidth
+        || particle.y - particleHeight / 2 > innerHeight);
+      if (!outsideViewport) return true;
+      particle.element.remove();
+      return false;
+    });
+    if (burst.particles.length) burst.frame = requestAnimationFrame(animateEducationLogoBursts);
+  }
+
+  function measureEducationBlock() {
+    const section = $('.education');
+    const block = $('.education-content-block');
     const upperStrip = $('.data-strip--bottom');
-    const lowerStrip = $('.about-strip');
-    const connectors = $('.about-connectors');
+    const lowerStrip = $('.education-strip');
     if (!section || !block || !upperStrip || !lowerStrip) return;
-    const gap = parseFloat(getComputedStyle(section).getPropertyValue('--about-block-gap')) || 64;
+    const connectors = $('.education-connectors');
+    const gap = parseFloat(getComputedStyle(section).getPropertyValue('--education-block-gap')) || 64;
     const upperHeight = upperStrip.offsetHeight;
     const lowerHeight = lowerStrip.offsetHeight;
     const border = section.clientTop || 0;
@@ -2624,11 +3051,6 @@ if (gl_FragColor.a < .01) discard;
       block.offsetHeight * 2 + gap * 4 + upperHeight + lowerHeight * 2 + border * 2 - state.height
     );
     if (Math.abs(section.offsetHeight - sectionHeight) > 0.5) section.style.height = `${sectionHeight}px`;
-    if (reducedMotion) {
-      block.style.transform = `translate3d(-50%,${gap}px,0)`;
-      updateAboutConnectors(section, block, connectors);
-      return;
-    }
     const sectionRect = section.getBoundingClientRect();
     const upperRect = upperStrip.getBoundingClientRect();
     const lowerRect = lowerStrip.getBoundingClientRect();
@@ -2640,6 +3062,32 @@ if (gl_FragColor.a < .01) discard;
     const endScroll = startScroll + middleDistance + upperRect.height + lowerRect.height - state.height;
     const range = Math.max(endScroll - startScroll, 1);
     const endOffset = Math.max(gap, lowerTop - block.offsetHeight - gap);
+    block.style.transform = `translate3d(-50%,${gap}px,0)`;
+    const sectionTop = sectionRect.top + state.scrollY;
+    const connectorMetrics = measureEducationConnectors(section, block, connectors, sectionTop);
+    educationScrollState = {
+      sectionTop,
+      sectionHeight: section.offsetHeight,
+      gap,
+      startScroll,
+      endScroll,
+      range,
+      endOffset,
+      connectorMetrics
+    };
+    renderEducationConnectors(connectorMetrics, connectorMetrics?.blockTop, true);
+  }
+
+  function updateEducationBlock() {
+    const metrics = educationScrollState;
+    if (!metrics || !isScrollNear(metrics.sectionTop, metrics.sectionHeight)) return;
+    const { gap, startScroll, endScroll, range, endOffset, connectorMetrics } = metrics;
+    const block = $('.education-content-block');
+    if (!block) return;
+    if (reducedMotion) {
+      block.style.transform = `translate3d(-50%,${gap}px,0)`;
+      return;
+    }
     // Keep the same 0.5x motion through the anchors, then continue the
     // slower drift so the frame can be collected by the lower strip.
     const rawProgress = (state.scrollY - startScroll) / range;
@@ -2648,11 +3096,14 @@ if (gl_FragColor.a < .01) discard;
     const afterAnchor = Math.max(0, state.scrollY - endScroll) * parallaxSpeed;
     const offset = gap + (endOffset - gap) * progress + afterAnchor;
     block.style.transform = `translate3d(-50%,${offset}px,0)`;
-    updateAboutConnectors(section, block, connectors);
+    // The connector geometry needs to converge on the moving block. Use the
+    // measurements cached during resize so scrolling performs no layout read.
+    renderEducationConnectors(connectorMetrics, connectorMetrics?.blockTop + offset - gap);
   }
 
-  function updateAboutConnectors(section, block, connectors) {
-    if (!connectors) return;
+  function measureEducationConnectors(section, block, canvas, sectionTop) {
+    const context = canvas?.getContext('2d', { alpha: true, desynchronized: true });
+    if (!context) return;
     const sectionRect = section.getBoundingClientRect();
     const blockRect = block.getBoundingClientRect();
     const left = blockRect.left - sectionRect.left;
@@ -2660,13 +3111,75 @@ if (gl_FragColor.a < .01) discard;
     const top = blockRect.top - sectionRect.top;
     const bottom = blockRect.bottom - sectionRect.top;
     const width = section.clientWidth;
-    const lowerStrip = $('.about-strip', section);
+    const lowerStrip = $('.education-strip', section);
     const lowerRect = lowerStrip ? lowerStrip.getBoundingClientRect() : sectionRect;
     const lowerLeft = lowerRect.left - sectionRect.left;
     const lowerRight = lowerRect.right - sectionRect.left;
     const lowerTop = lowerRect.top - sectionRect.top;
-    $('.about-outer', connectors).setAttribute('d', `M0 0H${width}V${lowerTop}H0Z`);
-    const grid = [];
+    // The grid is 1px line art. A 1x backing store keeps the scroll-time
+    // canvas work bounded on Retina displays without changing its CSS size.
+    const pixelRatio = 1;
+    canvas.width = Math.max(1, Math.round(width * pixelRatio));
+    canvas.height = Math.max(1, Math.round(section.clientHeight * pixelRatio));
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    const connectorMetrics = {
+      canvas,
+      context,
+      width,
+      height: section.clientHeight,
+      pixelRatio,
+      sectionTop,
+      stroke: getComputedStyle(section).getPropertyValue('--ink').trim() || '#39c5bb',
+      left,
+      right,
+      blockTop: top,
+      blockHeight: bottom - top,
+      lowerLeft,
+      lowerRight,
+      lowerTop,
+      lastTop: null,
+      lastViewportTop: null,
+      lastViewportBottom: null
+    };
+    return connectorMetrics;
+  }
+
+  function getEducationCanvasViewport(metrics) {
+    const visibleTop = clamp(state.scrollY - metrics.sectionTop, 0, metrics.height);
+    const visibleBottom = clamp(state.scrollY + state.height - metrics.sectionTop, 0, metrics.height);
+    if (visibleBottom <= visibleTop) return null;
+    const padding = 3;
+    return {
+      top: Math.max(0, Math.floor(visibleTop - padding)),
+      bottom: Math.min(metrics.height, Math.ceil(visibleBottom + padding))
+    };
+  }
+
+  function renderEducationConnectors(metrics, requestedTop, force = false) {
+    if (!metrics || !Number.isFinite(requestedTop)) return;
+    const top = Math.round(requestedTop * 10) / 10;
+    const viewport = getEducationCanvasViewport(metrics);
+    if (!viewport) return;
+    if (!force && metrics.lastTop === top && metrics.lastViewportTop === viewport.top && metrics.lastViewportBottom === viewport.bottom) return;
+    metrics.lastTop = top;
+    metrics.lastViewportTop = viewport.top;
+    metrics.lastViewportBottom = viewport.bottom;
+    const { context, width, height, stroke, left, right, blockHeight, lowerLeft, lowerRight, lowerTop } = metrics;
+    if (!context) return;
+    const bottom = top + blockHeight;
+    context.save();
+    context.beginPath();
+    context.rect(0, viewport.top, width, viewport.bottom - viewport.top);
+    context.clip();
+    context.clearRect(0, viewport.top, width, viewport.bottom - viewport.top);
+    context.strokeStyle = stroke;
+    context.lineWidth = 1;
+    context.beginPath();
+    context.moveTo(0, 0);
+    context.lineTo(width, 0);
+    context.lineTo(width, lowerTop);
+    context.lineTo(0, lowerTop);
+    context.closePath();
     // Keep the top and bottom perspective fans intentionally sparse: five
     // converging lines per edge (including both outer boundaries).
     const columns = 4;
@@ -2675,15 +3188,15 @@ if (gl_FragColor.a < .01) discard;
       const ratio = index / columns;
       const outerX = ratio * width;
       const innerX = left + ratio * (right - left);
-      grid.push(`M${outerX} 0L${innerX} ${top}`);
-      grid.push(`M${outerX} ${lowerTop}L${innerX} ${bottom}`);
+      context.moveTo(outerX, 0); context.lineTo(innerX, top);
+      context.moveTo(outerX, lowerTop); context.lineTo(innerX, bottom);
     }
     for (let index = 1; index < rows; index += 1) {
       const ratio = index / rows;
       const outerY = ratio * lowerTop;
       const innerY = top + ratio * (bottom - top);
-      grid.push(`M0 ${outerY}L${left} ${innerY}`);
-      grid.push(`M${width} ${outerY}L${right} ${innerY}`);
+      context.moveTo(0, outerY); context.lineTo(left, innerY);
+      context.moveTo(width, outerY); context.lineTo(right, innerY);
     }
     const crossRows = 4;
     for (let index = 1; index < crossRows; index += 1) {
@@ -2691,11 +3204,11 @@ if (gl_FragColor.a < .01) discard;
       const topY = ratio * top;
       const topLeft = ratio * left;
       const topRight = width - ratio * (width - right);
-      grid.push(`M${topLeft} ${topY}L${topRight} ${topY}`);
+      context.moveTo(topLeft, topY); context.lineTo(topRight, topY);
       const bottomY = lowerTop + ratio * (bottom - lowerTop);
       const bottomLeft = ratio * left;
       const bottomRight = width - ratio * (width - right);
-      grid.push(`M${bottomLeft} ${bottomY}L${bottomRight} ${bottomY}`);
+      context.moveTo(bottomLeft, bottomY); context.lineTo(bottomRight, bottomY);
     }
     const sideRows = 4;
     for (let index = 1; index < sideRows; index += 1) {
@@ -2704,14 +3217,22 @@ if (gl_FragColor.a < .01) discard;
       const sideYBottom = lowerTop + ratio * (bottom - lowerTop);
       const leftX = ratio * left;
       const rightX = width - ratio * (width - right);
-      grid.push(`M${leftX} ${sideYTop}L${leftX} ${sideYBottom}`);
-      grid.push(`M${rightX} ${sideYTop}L${rightX} ${sideYBottom}`);
+      context.moveTo(leftX, sideYTop); context.lineTo(leftX, sideYBottom);
+      context.moveTo(rightX, sideYTop); context.lineTo(rightX, sideYBottom);
     }
-    $('.about-grid', connectors).setAttribute('d', grid.join(''));
-    $('.about-link--tl', connectors).setAttribute('d', `M0 0L${left} ${top}`);
-    $('.about-link--tr', connectors).setAttribute('d', `M${width} 0L${right} ${top}`);
-    $('.about-link--bl', connectors).setAttribute('d', `M${lowerLeft} ${lowerTop}L${left} ${bottom}`);
-    $('.about-link--br', connectors).setAttribute('d', `M${lowerRight} ${lowerTop}L${right} ${bottom}`);
+    context.moveTo(0, 0); context.lineTo(left, top);
+    context.moveTo(width, 0); context.lineTo(right, top);
+    context.moveTo(lowerLeft, lowerTop); context.lineTo(left, bottom);
+    context.moveTo(lowerRight, lowerTop); context.lineTo(right, bottom);
+    context.stroke();
+    context.restore();
+  }
+
+  function refreshEducationConnectorTheme() {
+    const metrics = educationScrollState?.connectorMetrics;
+    if (!metrics?.canvas) return;
+    metrics.stroke = getComputedStyle(metrics.canvas).getPropertyValue('--ink').trim() || '#39c5bb';
+    renderEducationConnectors(metrics, metrics.lastTop ?? metrics.blockTop, true);
   }
 
   function ensurePaperTransitionStage() {
@@ -2753,6 +3274,7 @@ if (gl_FragColor.a < .01) discard;
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.content = themeSurface;
     paperBaseLayer.style.backgroundColor = theme.paper;
+    refreshEducationConnectorTheme();
     refreshMemoryTheme();
   }
 
@@ -2884,11 +3406,23 @@ if (gl_FragColor.a < .01) discard;
 
   function toggleThemePolarity(options = {}) {
     themeUsesDarkBackground = !themeUsesDarkBackground;
+    saveThemePolarity();
     applyThemeSelection(options);
   }
 
+  function isScrollNear(sectionTop, sectionHeight, margin = state.height) {
+    return Number.isFinite(sectionTop) && sectionHeight > 0
+      && state.scrollY + state.height >= sectionTop - margin
+      && state.scrollY <= sectionTop + sectionHeight + margin;
+  }
+
   function updateScroll() {
-    state.scrollY = scrollY; syncThemeTransitionLayers(); updateAboutBlock(); updateWork(); updateMyWayType(); state.ticking = false;
+    state.scrollY = scrollY;
+    if (themeTransitionLayers.size) syncThemeTransitionLayers();
+    if (educationScrollState && isScrollNear(educationScrollState.sectionTop, educationScrollState.sectionHeight)) updateEducationBlock();
+    if (isScrollNear(workTimelineState.top, workTimelineState.height)) updateWork();
+    if (isScrollNear(myWayTypeState.scrollTop, myWayTypeState.scrollHeight)) updateMyWayType();
+    state.ticking = false;
   }
 
   function bind() {
@@ -2921,5 +3455,5 @@ if (gl_FragColor.a < .01) discard;
     });
   }
 
-  buildData(); buildWork(); buildMyWayType(); buildMyWayStretchControl(); buildMemories(); buildContactPortal(); bind(); resize(); initHeroLetterMotion();
+  buildData(); buildHeroWaveControl(); buildWork(); buildMyWayType(); buildMyWayStretchControl(); buildMemories(); buildContactPortal(); buildEducationSchoolReveals(); buildEducationLogoBursts(); bind(); resize(); initHeroLetterMotion();
 })();

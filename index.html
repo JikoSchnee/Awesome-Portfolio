@@ -22,7 +22,7 @@
           <div class="loader-copy" aria-live="polite"><span id="loader-line">PLEASE WAIT WHILE I OVERTHINK THIS</span></div>
           <div class="mobile-gap" aria-hidden="true"></div>
           <nav class="main-nav" aria-label="Primary navigation">
-            <a href="#about">ABOUT</a><a href="#work">WORK</a><a href="#memory">MEMORY</a><a href="#contact-go">CONTACT</a>
+            <a href="#education">ABOUT</a><a href="#work">WORK</a><a href="#memory">MEMORY</a><a href="#contact-go">CONTACT</a>
           </nav>
           <a class="icon-link codepen" href="https://codepen.io/wodniack" aria-label="Follow me on CodePen" target="_blank" rel="noreferrer">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 5.25v9.5L12 22l-9-5.25v-9.5L12 2Zm0 2.35L6.08 7.8 12 11.25l5.92-3.45L12 4.35ZM5 9.54v4.92l4.23-2.46L5 9.54Zm14 0L14.77 12 19 14.46V9.54ZM12 12.75 6.08 16.2 12 19.65l5.92-3.45L12 12.75Z" /></svg>
@@ -30,24 +30,99 @@
           <a class="icon-link linkedin" href="https://www.linkedin.com/in/wodniack/" aria-label="Follow me on LinkedIn" target="_blank" rel="noreferrer">in</a>
           <div class="contrast" role="group" aria-label="Theme controls">
             <button class="theme-color" type="button" aria-label="Change theme color"><span aria-hidden="true"></span></button>
-            <button class="theme-polarity" type="button" aria-label="Use theme color as background"><span aria-hidden="true"></span></button>
+            <button class="theme-polarity" type="button" aria-label="Use theme color as background">
+              <span aria-hidden="true">
+                <svg class="theme-icon theme-icon--sun" viewBox="0 0 24 24" focusable="false">
+                  <circle cx="12" cy="12" r="4"></circle>
+                  <path d="M12 1.5v3M12 19.5v3M4.58 4.58l2.12 2.12M17.3 17.3l2.12 2.12M1.5 12h3M19.5 12h3M4.58 19.42l2.12-2.12M17.3 6.7l2.12-2.12"></path>
+                </svg>
+                <svg class="theme-icon theme-icon--moon" viewBox="0 0 24 24" focusable="false">
+                  <path d="M20.5 15.3A8.5 8.5 0 0 1 8.7 3.5 8.5 8.5 0 1 0 20.5 15.3Z"></path>
+                </svg>
+              </span>
+            </button>
           </div>
           <aside class="availability"><p class="availability-origin">Coding globally from France.</p><p><span class="availability-label">Available for freelance work → </span><a href="mailto:hello@wodniack.dev">Hire me</a></p></aside>
           <a class="mobile-hire" href="mailto:hello@wodniack.dev">Hire me</a>
         </header>
 
-        <div class="line-field" id="top" role="img" aria-label="Animated wave field"><a-waves><svg class="js-svg" aria-hidden="true"></svg></a-waves></div>
+        <div class="line-field" id="top" role="img" aria-label="Animated wave field"><a-waves><canvas class="js-wave-canvas" aria-hidden="true"></canvas></a-waves></div>
         <div class="hero-content">
         <data-strip class="data-strip" data-segments="5" role="img" aria-label="Binary data strip"></data-strip>
           <h1 class="hero-title" id="hero-title" aria-label="JIKO SCHNEE"><span class="hero-word" aria-hidden="true"><span class="hero-letter-cell"><span class="hero-letter-sizer">J</span><span class="hero-letter-track"><span class="hero-letter">J</span><span class="hero-letter">J</span></span></span><span class="hero-letter-cell"><span class="hero-letter-sizer">I</span><span class="hero-letter-track"><span class="hero-letter">I</span><span class="hero-letter">I</span></span></span><span class="hero-letter-cell"><span class="hero-letter-sizer">K</span><span class="hero-letter-track"><span class="hero-letter">K</span><span class="hero-letter">K</span></span></span><span class="hero-letter-cell"><span class="hero-letter-sizer">O</span><span class="hero-letter-track"><span class="hero-letter">O</span><span class="hero-letter">O</span></span></span></span><span class="hero-star" aria-hidden="true"></span><span class="hero-word" aria-hidden="true"><span class="hero-letter-cell"><span class="hero-letter-sizer">S</span><span class="hero-letter-track"><span class="hero-letter">S</span><span class="hero-letter">S</span></span></span><span class="hero-letter-cell"><span class="hero-letter-sizer">C</span><span class="hero-letter-track"><span class="hero-letter">C</span><span class="hero-letter">C</span></span></span><span class="hero-letter-cell"><span class="hero-letter-sizer">H</span><span class="hero-letter-track"><span class="hero-letter">H</span><span class="hero-letter">H</span></span></span><span class="hero-letter-cell"><span class="hero-letter-sizer">N</span><span class="hero-letter-track"><span class="hero-letter">N</span><span class="hero-letter">N</span></span></span><span class="hero-letter-cell"><span class="hero-letter-sizer">E</span><span class="hero-letter-track"><span class="hero-letter">E</span><span class="hero-letter">E</span></span></span><span class="hero-letter-cell"><span class="hero-letter-sizer">E</span><span class="hero-letter-track"><span class="hero-letter">E</span><span class="hero-letter">E</span></span></span></span></h1>
           <data-strip class="data-strip data-strip--bottom" data-segments="4" role="img" aria-label="Binary data strip"></data-strip>
         </div>
+        <aside class="hero-wave-control" role="group" aria-label="Wave field controls">
+          <label for="hero-wave-noise"><span>NOISE</span><output id="hero-wave-noise-value" for="hero-wave-noise">66%</output></label>
+          <input id="hero-wave-noise" type="range" min="0" max="100" step="1" value="66" aria-label="Adjust wave noise">
+          <label for="hero-wave-spacing"><span>LINE SPACING</span><output id="hero-wave-spacing-value" for="hero-wave-spacing">15PX</output></label>
+          <input id="hero-wave-spacing" type="range" min="8" max="32" step="1" value="15" aria-label="Adjust wave line spacing">
+        </aside>
       </section>
 
-      <section class="about" id="about">
-        <svg class="about-connectors" aria-hidden="true" focusable="false"><path class="about-outer"></path><path class="about-grid"></path><path class="about-link about-link--tl"></path><path class="about-link about-link--tr"></path><path class="about-link about-link--bl"></path><path class="about-link about-link--br"></path></svg>
-        <div class="about-content-block" aria-hidden="true"></div>
-        <data-strip class="data-strip about-strip" data-segments="4" role="img" aria-label="Binary data strip"></data-strip>
+      <section class="education" id="education" aria-labelledby="education-title">
+        <canvas class="education-connectors" aria-hidden="true"></canvas>
+        <div class="education-content-block">
+          <article class="education-panel" aria-labelledby="education-title">
+            <header class="education-panel-head">
+              <h2 class="education-panel-title" id="education-title">EDUCATION</h2>
+            </header>
+            <div class="education-schools" role="list">
+              <div class="education-school" role="listitem">
+                <span class="education-school-cover" aria-hidden="true">
+                  <span class="education-school-cover-cell"><span class="education-school-cover-part"><span class="education-school-cover-star"></span></span></span>
+                  <span class="education-school-cover-cell"><span class="education-school-cover-part"><span class="education-school-cover-star"></span></span></span>
+                </span>
+                <div class="education-school-details">
+                  <button class="education-school-trigger education-school-trigger--school" type="button" data-education-logo="cityu" aria-label="Launch City University logos" tabindex="-1">
+                    <span class="education-school-name"><strong>City University of Hong Kong</strong><small>Postgraduate</small></span>
+                  </button>
+                  <button class="education-school-trigger education-school-trigger--ranking" type="button" data-education-rank="#63" aria-label="Launch City University 2026 QS ranking" tabindex="-1">
+                    <span class="education-school-ranking"><small>2026 QS RANKING</small><strong>#63</strong></span>
+                  </button>
+                </div>
+              </div>
+              <div class="education-school" role="listitem">
+                <span class="education-school-cover" aria-hidden="true">
+                  <span class="education-school-cover-cell"><span class="education-school-cover-part"><span class="education-school-cover-star"></span></span></span>
+                  <span class="education-school-cover-cell"><span class="education-school-cover-part"><span class="education-school-cover-star"></span></span></span>
+                </span>
+                <div class="education-school-details">
+                  <button class="education-school-trigger education-school-trigger--school" type="button" data-education-logo="sustech" aria-label="Launch SUSTech logos" tabindex="-1">
+                    <span class="education-school-name"><strong>Southern University of Science and Technology</strong><small>Bachelor</small></span>
+                  </button>
+                  <button class="education-school-trigger education-school-trigger--ranking" type="button" data-education-rank="#343" aria-label="Launch SUSTech 2026 QS ranking" tabindex="-1">
+                    <span class="education-school-ranking"><small>2026 QS RANKING</small><strong>#343</strong></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+        <aside class="education-burst-control" role="group" aria-label="Logo fall controls">
+          <label for="education-burst-spread"><span>FALL SPREAD</span><output id="education-burst-spread-value" for="education-burst-spread">20%</output></label>
+          <input id="education-burst-spread" type="range" min="1" max="100" step="1" value="20" aria-label="Adjust logo fall spread">
+          <label for="education-burst-height"><span>BURST HEIGHT</span><output id="education-burst-height-value" for="education-burst-height">30%</output></label>
+          <input id="education-burst-height" type="range" min="1" max="100" step="1" value="30" aria-label="Adjust logo burst height">
+          <div class="education-logo-crop" role="group" aria-label="Logo crop controls">
+            <p>LOGO CROP</p>
+            <div class="education-logo-crop-targets">
+              <button type="button" data-education-crop-target="cityu" aria-pressed="true">CITYU</button>
+              <button type="button" data-education-crop-target="sustech" aria-pressed="false">SUSTECH</button>
+            </div>
+            <div class="education-logo-crop-preview" aria-label="Current logo crop preview">
+              <span id="education-logo-crop-preview-mark" class="education-logo-crop-preview-mark education-logo-burst--cityu" aria-hidden="true"></span>
+            </div>
+            <label for="education-logo-crop-zoom"><span>ZOOM</span><output id="education-logo-crop-zoom-value" for="education-logo-crop-zoom">181%</output></label>
+            <input id="education-logo-crop-zoom" type="range" min="50" max="200" step="1" value="181" aria-label="Adjust logo crop zoom">
+            <label for="education-logo-crop-x"><span>X OFFSET</span><output id="education-logo-crop-x-value" for="education-logo-crop-x">20%</output></label>
+            <input id="education-logo-crop-x" type="range" min="-50" max="50" step="1" value="20" aria-label="Adjust logo crop horizontal offset">
+            <label for="education-logo-crop-y"><span>Y OFFSET</span><output id="education-logo-crop-y-value" for="education-logo-crop-y">-17%</output></label>
+            <input id="education-logo-crop-y" type="range" min="-50" max="50" step="1" value="-17" aria-label="Adjust logo crop vertical offset">
+          </div>
+          <button class="education-recover-button" id="education-recover" type="button">RE-COVER</button>
+        </aside>
+        <data-strip class="data-strip education-strip" data-segments="4" role="img" aria-label="Education binary data strip"></data-strip>
       </section>
 
       <section class="work" id="work" aria-labelledby="work-title">
