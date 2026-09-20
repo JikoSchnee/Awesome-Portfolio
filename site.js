@@ -2435,9 +2435,23 @@ if (gl_FragColor.a < .01) discard;
     title.dataset.fitKey = `${mobile}:${Math.round(title.clientWidth)}:${Math.round(title.clientHeight)}`;
   }
 
+  let layoutViewportProbe = null;
+  function getLayoutViewport() {
+    // Small viewport units stay stable while mobile browser chrome animates.
+    const stableMobileHeight = matchMedia('(any-pointer: coarse)').matches
+      && CSS.supports('height', '100svh') && layoutViewportProbe;
+    return {
+      width: innerWidth,
+      height: stableMobileHeight ? layoutViewportProbe.clientHeight : innerHeight,
+      pixelRatio: devicePixelRatio || 1
+    };
+  }
+
   function resize() {
     clearThemeTransitionLayers();
-    state.width = innerWidth; state.height = innerHeight;
+    const viewport = getLayoutViewport();
+    state.width = viewport.width; state.height = viewport.height;
+    state.pixelRatio = viewport.pixelRatio;
     state.scrollY = scrollY;
     measureMyWayType();
     fitHeroTitle();
@@ -3498,16 +3512,33 @@ if (gl_FragColor.a < .01) discard;
   function bind() {
     addEventListener('pointermove', event => { state.pointerX = event.clientX / innerWidth; state.pointerY = event.clientY / innerHeight; }, { passive: true });
     addEventListener('scroll', () => { if (!state.ticking) { state.ticking = true; requestAnimationFrame(updateScroll); } }, { passive: true });
+    layoutViewportProbe = document.createElement('div');
+    layoutViewportProbe.setAttribute('aria-hidden', 'true');
+    layoutViewportProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:100svh;visibility:hidden;pointer-events:none;contain:strict';
+    document.body.append(layoutViewportProbe);
     let resizeFrame = 0;
     const scheduleResize = () => {
       if (resizeFrame) return;
-      resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; resize(); });
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = 0;
+        const viewport = getLayoutViewport();
+        if (viewport.width === state.width && viewport.height === state.height
+          && viewport.pixelRatio === state.pixelRatio) return;
+        resize();
+      });
     };
     addEventListener('resize', scheduleResize, { passive: true });
     window.visualViewport?.addEventListener('resize', scheduleResize, { passive: true });
     if (window.ResizeObserver) {
-      const shellObserver = new ResizeObserver(scheduleResize);
+      let shellWidth = -1;
+      const shellObserver = new ResizeObserver(entries => {
+        const width = entries[0].contentRect.width;
+        if (width === shellWidth) return;
+        shellWidth = width;
+        scheduleResize();
+      });
       shellObserver.observe($('.site-shell'));
+      new ResizeObserver(scheduleResize).observe(layoutViewportProbe);
     }
     heroDisplayFontReady.then(() => { fitHeroTitle(true); resize(); });
     const themeColor = $('.theme-color');
