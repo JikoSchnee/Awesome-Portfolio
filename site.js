@@ -2409,11 +2409,10 @@ if (gl_FragColor.a < .01) discard;
     title.setAttribute('aria-label', mobile ? 'JIKO' : 'JIKO SCHNEE');
     if (mobile) {
       const styles = getComputedStyle(title);
-      const gap = Math.max(16, title.clientWidth * .06);
-      const available = Math.max(1, title.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight) - star.offsetWidth - gap);
+      const available = Math.max(1, title.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight));
       const width = words[0].getBoundingClientRect().width;
       title.style.fontSize = `${parseFloat(styles.fontSize) * Math.min(1, available / Math.max(width, 1))}px`;
-      title.style.gap = `${gap}px`;
+      title.style.gap = '0px';
       title.dataset.fitKey = `${mobile}:${Math.round(title.clientWidth)}:${Math.round(title.clientHeight)}`;
       return;
     }

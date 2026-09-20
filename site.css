@@ -260,12 +260,10 @@ body.memory-is-grabbing,body.memory-is-grabbing *{cursor:grabbing!important;user
 @media (max-width:760px){
   :root{--edge:8px;--footer-height:63px}
   .site-shell{width:calc(100% - 16px);margin:8px}
-  .hero-title{font-size:clamp(80px,25vw,170px);line-height:1;padding:8px 16px;letter-spacing:0}
-  .hero-title .hero-word{transform:none}
+  .hero-title{font-size:clamp(80px,25vw,170px);line-height:.78;padding:0 16px;letter-spacing:0;justify-content:center}
+  .hero-title .hero-word{transform:scaleY(1.09)}
   .hero-title .hero-word:last-of-type{display:none}
-  .hero-title .hero-star{order:-1;width:clamp(32px,10vw,56px);height:clamp(32px,10vw,56px)}
-  .hero-title .hero-letter-cell{height:1em}
-  .hero-title .hero-letter,.hero-title .hero-letter-cell--round .hero-letter{transform:none}
+  .hero-title .hero-star{display:none}
   .hero{--hero-head-height:65px;grid-template-rows:var(--hero-head-height) minmax(180px,1fr) max-content}
   .site-head{height:65px;grid-template-columns:52px minmax(0,1fr) 82px 40px 40px}
   .brand svg{width:30px;height:30px}
