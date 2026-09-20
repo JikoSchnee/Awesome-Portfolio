@@ -2395,7 +2395,8 @@ if (gl_FragColor.a < .01) discard;
   function fitHeroTitle(force = false) {
     const title = $('.hero-title');
     if (!title) return;
-    const fitKey = `${Math.round(title.clientWidth)}:${Math.round(title.clientHeight)}`;
+    const mobile = matchMedia('(max-width: 760px)').matches;
+    const fitKey = `${mobile}:${Math.round(title.clientWidth)}:${Math.round(title.clientHeight)}`;
     if (!force && title.dataset.fitKey === fitKey) return;
     title.style.fontSize = '';
     title.style.gap = '0px';
@@ -2405,6 +2406,17 @@ if (gl_FragColor.a < .01) discard;
     // Always measure natural glyph widths, never widths frozen before a font swap.
     title.querySelectorAll('.hero-letter-cell').forEach(cell => { cell.style.width = ''; });
     star.style.transform = '';
+    title.setAttribute('aria-label', mobile ? 'JIKO' : 'JIKO SCHNEE');
+    if (mobile) {
+      const styles = getComputedStyle(title);
+      const gap = Math.max(16, title.clientWidth * .06);
+      const available = Math.max(1, title.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight) - star.offsetWidth - gap);
+      const width = words[0].getBoundingClientRect().width;
+      title.style.fontSize = `${parseFloat(styles.fontSize) * Math.min(1, available / Math.max(width, 1))}px`;
+      title.style.gap = `${gap}px`;
+      title.dataset.fitKey = `${mobile}:${Math.round(title.clientWidth)}:${Math.round(title.clientHeight)}`;
+      return;
+    }
     const baseSize = parseFloat(getComputedStyle(title).fontSize);
     const wordWidth = words.reduce((sum, word) => sum + word.getBoundingClientRect().width, 0);
     const referenceLetters = [...words[0].querySelectorAll('.hero-letter-cell')].slice(0, 2);
@@ -2421,7 +2433,7 @@ if (gl_FragColor.a < .01) discard;
     const targetCenter = (firstEnd + secondStart) / 2;
     const starCenter = star.offsetLeft + star.offsetWidth / 2;
     star.style.transform = `translateX(${targetCenter - starCenter}px)`;
-    title.dataset.fitKey = `${Math.round(title.clientWidth)}:${Math.round(title.clientHeight)}`;
+    title.dataset.fitKey = `${mobile}:${Math.round(title.clientWidth)}:${Math.round(title.clientHeight)}`;
   }
 
   function resize() {
