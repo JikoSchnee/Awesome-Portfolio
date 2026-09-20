@@ -2474,6 +2474,15 @@ if (gl_FragColor.a < .01) discard;
     const height = Math.max(inner.offsetHeight, 1);
     const stage = $('.work-stage');
     workIntroState.stageHeight = Math.max(stage?.clientHeight || state.height, 1);
+    workIntroState.stageWidth = Math.max(stage?.clientWidth || state.width, 1);
+    const capsuleSize = element => {
+      const styles = getComputedStyle(element);
+      return { width: parseFloat(styles.width), height: parseFloat(styles.height) };
+    };
+    workIntroState.clipGeometry = { outer: capsuleSize(outer), inner: capsuleSize(inner) };
+    workIntroState.titleLetters = [...title.querySelectorAll('span')];
+    workIntroState.spreadRows = [...spread.querySelectorAll('.work-spread-row')].map(row =>
+      [...row.querySelectorAll('.work-spread-letter')].map(element => ({ element, side: Number(element.dataset.side) })));
     workIntroState.spreadWidth = Math.max(spread.clientWidth, 1);
     workIntroState.spreadHeight = Math.max(spread.clientHeight, 1);
     const travelDistance = Math.max(state.height * workCardTravelScreens, 1);
@@ -2502,6 +2511,13 @@ if (gl_FragColor.a < .01) discard;
     workTimelineState.media = state.height * (workCardTravelScreens + (workItems.length - 1) * workCardStaggerScreens);
     workTimelineState.cardTail = state.height * workCardTailScreens;
     workTimelineState.collapse = state.height * workCollapseScreens;
+    // At the end of collapse the dots return to their smallest scale but
+    // retain the full horizontal travel. Cover both sides at that endpoint.
+    const maximumDotTravel = (workTimelineState.hold + workTimelineState.media + workTimelineState.cardTail) * .25;
+    const stageWidth = $('.work-stage')?.clientWidth || state.width;
+    if (workIntroState.dotField) {
+      workIntroState.dotField.style.width = `${Math.ceil(Math.max(state.width * 4, stageWidth + maximumDotTravel * 2 + 48))}px`;
+    }
     workTimelineState.total = workAnchorBuffer + workTimelineState.expansion + workTimelineState.hold + workTimelineState.media + workTimelineState.cardTail + workTimelineState.collapse;
     section.style.height = `${state.height + workTimelineState.total}px`;
     const rect = section.getBoundingClientRect();
@@ -2557,26 +2573,25 @@ if (gl_FragColor.a < .01) discard;
     hole.setAttribute('ry', String(height / 2));
   }
 
-  function updateWorkTypeClip() {
-    const { typeLayer, typeInnerMask, outer, inner } = workIntroState;
-    const stage = $('.work-stage');
-    if (!typeLayer || !typeInnerMask || !outer || !inner || !stage) return;
-    const stageRect = stage.getBoundingClientRect();
-    const applyCapsuleClip = (element, capsule) => {
-      const rect = capsule.getBoundingClientRect();
-      const left = rect.left - stageRect.left;
-      const right = stageRect.right - rect.right;
-      const top = rect.top - stageRect.top;
-      const bottom = stageRect.bottom - rect.bottom;
+  function updateWorkTypeClip(sceneScale, innerShift = 0) {
+    const { typeLayer, typeInnerMask, clipGeometry, stageWidth, stageHeight } = workIntroState;
+    if (!typeLayer || !typeInnerMask || !clipGeometry) return;
+    const applyCapsuleClip = (element, capsule, shift) => {
+      const width = capsule.width * sceneScale;
+      const height = capsule.height * sceneScale;
+      const left = (stageWidth - width) / 2;
+      const right = left;
+      const top = (stageHeight - height) / 2 + shift * sceneScale;
+      const bottom = (stageHeight - height) / 2 - shift * sceneScale;
       if (left <= 0 && right <= 0 && top <= 0 && bottom <= 0) {
         element.style.clipPath = 'inset(0)';
         return;
       }
-      const radius = Math.min(rect.width, rect.height) / 2;
+      const radius = Math.min(width, height) / 2;
       element.style.clipPath = `inset(${top.toFixed(3)}px ${right.toFixed(3)}px ${bottom.toFixed(3)}px ${left.toFixed(3)}px round ${radius.toFixed(3)}px)`;
     };
-    applyCapsuleClip(typeLayer, outer);
-    applyCapsuleClip(typeInnerMask, inner);
+    applyCapsuleClip(typeLayer, clipGeometry.outer, 0);
+    applyCapsuleClip(typeInnerMask, clipGeometry.inner, innerShift);
   }
 
   function updateWorkTypeMetrics(workScale, spreadProgress) {
@@ -2594,8 +2609,10 @@ if (gl_FragColor.a < .01) discard;
     const availableHalfHeight = Math.max(0, height / 2 - verticalGutter - arcHeight);
     const maxSize = availableHalfHeight / Math.max(edgeRowOffset + edgeLetterHalfHeight, .001);
     const size = Math.max(40, Math.min(preferredSize, maxSize));
-    typeLayer.style.setProperty('--work-type-size', `${size.toFixed(3)}px`);
-    typeLayer.style.setProperty('--work-type-gap', `${(size * gapRatio).toFixed(3)}px`);
+    const stride = size * (workTitleLineHeight + gapRatio);
+    workIntroState.titleLetters.forEach((letter, index) => {
+      letter.style.transform = `translate3d(${-size * .325}px,${(index - 1.5) * stride - size * workTitleLineHeight / 2}px,0) scale(${size / 150})`;
+    });
     return size;
   }
 
@@ -2632,12 +2649,11 @@ if (gl_FragColor.a < .01) discard;
     const baseSize = Math.min(150, Math.max(118, state.width * .104));
     const titleGap = typeSize * workTitleGap / baseSize;
     const rowStride = typeSize * workTitleLineHeight + titleGap;
-    spread.querySelectorAll('.work-spread-row').forEach((row, rowIndex) => {
+    workIntroState.spreadRows.forEach((row, rowIndex) => {
       const baseY = (rowIndex - 1.5) * rowStride;
       const arc = rowIndex === 0 || rowIndex === 3 ? outerArc : innerArc;
       const arcDirection = rowIndex < 2 ? -1 : 1;
-      row.querySelectorAll('.work-spread-letter').forEach(clone => {
-        const side = Number(clone.dataset.side);
+      row.forEach(({ element: clone, side }) => {
         const spreadPosition = side * step * eased;
         const loopPosition = wrapWorkTrackPosition(side * step - offset, cycle);
         const x = isCollapsing ? loopPosition * eased : (isLooping ? loopPosition : spreadPosition);
@@ -2645,11 +2661,10 @@ if (gl_FragColor.a < .01) discard;
         const y = baseY + arcDirection * arc * distance * distance * eased;
         const scale = 1 + workSpreadEdgeGrowth * distance * distance * eased;
         const fontSize = typeSize * scale;
-        clone.style.left = `${Math.round(width / 2 + x - fontSize * .325)}px`;
-        clone.style.top = `${Math.round(height / 2 + y - fontSize * workTitleLineHeight / 2)}px`;
-        clone.style.fontSize = `${fontSize.toFixed(3)}px`;
+        const left = Math.round(width / 2 + x - fontSize * .325);
+        const top = Math.round(height / 2 + y - fontSize * workTitleLineHeight / 2);
         clone.style.zIndex = String(Math.round((1 - distance) * 1000));
-        clone.style.transform = 'none';
+        clone.style.transform = `translate3d(${left}px,${top}px,0) scale(${fontSize / 150})`;
         clone.style.opacity = '1';
       });
     });
@@ -2670,7 +2685,7 @@ if (gl_FragColor.a < .01) discard;
       title.style.opacity = '1';
       scene.style.transform = `scale(${sceneScale})`;
       updateWorkTypeOffset(0);
-      updateWorkTypeClip();
+      updateWorkTypeClip(sceneScale);
       updateWorkSpread(1, typeSize);
       return;
     }
@@ -2699,7 +2714,7 @@ if (gl_FragColor.a < .01) discard;
     title.style.opacity = '1';
     scene.style.transform = `scale(${sceneScale})`;
     updateWorkTypeOffset(titleOuterShift);
-    updateWorkTypeClip();
+    updateWorkTypeClip(sceneScale, innerShift);
     updateWorkSpread(expansionProgress, typeSize, loopDistance, collapseProgress);
   }
 
