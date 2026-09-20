@@ -2,6 +2,9 @@
   const $ = (selector, scope = document) => scope.querySelector(selector);
   const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const heroDisplayFontReady = document.fonts?.load
+    ? document.fonts.load('700 100px Bigger', 'JIKO SCHNEE').catch(() => document.fonts.ready)
+    : (document.fonts?.ready || Promise.resolve());
   const state = { width: innerWidth, height: innerHeight, pointerX: .5, pointerY: .5, scrollY: 0, ticking: false };
   const workIntroState = { outer: null, inner: null, dotField: null, title: null, typeLayer: null, typeInnerMask: null, scene: null, spread: null, measured: false, coverScale: 1, cloneCount: 0, stageHeight: 0, spreadWidth: 0, spreadHeight: 0, cards: [] };
   const workAnchorBuffer = 5;
@@ -400,8 +403,12 @@
       const titleObserver = new ResizeObserver(() => { fitHeroTitle(); remeasure(); });
       titleObserver.observe($('.hero-title'));
     }
-    if (document.fonts?.ready) document.fonts.ready.then(() => { fitHeroTitle(true); remeasure(); });
+    heroDisplayFontReady.then(() => { remeasure(); fitHeroTitle(true); remeasure(); });
+    let letterFrame = 0;
+    let pausedAt = null;
     const tick = time => {
+      letterFrame = 0;
+      if (pausedAt !== null) return;
       states.forEach(state => {
         if (!state.active && time >= state.nextAt) {
           state.active = true; state.startedAt = time; state.direction = directions[Math.floor(random() * directions.length)]; measureDistance(state); parkSecondary(state);
@@ -411,9 +418,32 @@
         applyMotion(state, progress);
         if (progress >= 1) { state.active = false; settle(state); state.nextAt = time + nextDelay(); }
       });
-      requestAnimationFrame(tick);
+      letterFrame = requestAnimationFrame(tick);
     };
-    requestAnimationFrame(tick);
+    letterFrame = requestAnimationFrame(tick);
+    let heroVisible = true;
+    const syncLetterPlayback = () => {
+      const playing = heroVisible && !document.hidden;
+      const now = performance.now();
+      if (!playing && pausedAt === null) {
+        pausedAt = now;
+        cancelAnimationFrame(letterFrame);
+        letterFrame = 0;
+      } else if (playing && pausedAt !== null) {
+        const delay = now - pausedAt;
+        states.forEach(state => { state.nextAt += delay; state.startedAt += delay; });
+        pausedAt = null;
+        letterFrame = requestAnimationFrame(tick);
+      }
+    };
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(([entry]) => {
+        heroVisible = entry.isIntersecting;
+        syncLetterPlayback();
+      }).observe($('.hero'));
+    }
+    document.addEventListener('visibilitychange', syncLetterPlayback);
+    syncLetterPlayback();
   }
 
   function buildData() {
@@ -451,7 +481,7 @@
       const split = Math.ceil(segment.bits.length / 2);
       const first = segment.bits.slice(0, split).join('');
       const second = segment.bits.slice(split).join('');
-      segment.span.dataset.binary = `${first}   ${separator}   ${second}   ${separator}`;
+      segment.text = `${first}   ${separator}   ${second}   ${separator}`;
     };
     const resizeBinaryRows = () => {
       binaryRows.forEach(row => row.segments.forEach(segment => {
@@ -466,9 +496,6 @@
         renderSegment(segment);
       }));
     };
-    resizeBinaryRows();
-    addEventListener('resize', resizeBinaryRows, { passive: true });
-    if (document.fonts?.ready) document.fonts.ready.then(resizeBinaryRows);
     const updateBinary = () => {
       binaryRows.forEach(row => {
         const totalBits = row.segments.reduce((total, segment) => total + segment.bits.length, 0);
@@ -491,8 +518,35 @@
         dirtySegments.forEach(segmentIndex => renderSegment(row.segments[segmentIndex]));
       });
     };
-    updateBinary();
-    if (!reducedMotion) setInterval(updateBinary, 100);
+    const binarySegments = binaryRows.flatMap(row => row.segments);
+    let binaryFrames = [];
+    let binaryStartedAt = 0;
+    const playBinary = () => {
+      const frame = binaryFrames[Math.floor((performance.now() - binaryStartedAt) / 100) % binaryFrames.length];
+      if (!frame) return;
+      binarySegments.forEach((segment, index) => {
+        if (segment.span.dataset.binary !== frame[index]) segment.span.dataset.binary = frame[index];
+      });
+    };
+    const prepareBinary = () => {
+      resizeBinaryRows();
+      binaryFrames = Array.from({ length: reducedMotion ? 1 : 100 }, () => {
+        updateBinary();
+        return binarySegments.map(segment => segment.text);
+      });
+      binaryStartedAt = performance.now();
+      playBinary();
+    };
+    prepareBinary();
+    let binaryResizeFrame = 0;
+    addEventListener('resize', () => {
+      if (!binaryResizeFrame) binaryResizeFrame = requestAnimationFrame(() => {
+        binaryResizeFrame = 0;
+        prepareBinary();
+      });
+    }, { passive: true });
+    if (document.fonts?.ready) document.fonts.ready.then(prepareBinary);
+    if (!reducedMotion) setInterval(playBinary, 100);
 
   }
 
@@ -2411,7 +2465,20 @@ if (gl_FragColor.a < .01) discard;
     workIntroState.stageHeight = Math.max(stage?.clientHeight || state.height, 1);
     workIntroState.spreadWidth = Math.max(spread.clientWidth, 1);
     workIntroState.spreadHeight = Math.max(spread.clientHeight, 1);
-    workIntroState.cards = [...document.querySelectorAll('.work-card')].map(card => ({ card, width: card.offsetWidth }));
+    const travelDistance = Math.max(state.height * workCardTravelScreens, 1);
+    const staggerDistance = state.height * workCardStaggerScreens;
+    const rowOffset = state.width <= 900 ? 14 : 21;
+    workIntroState.visibleCards = [];
+    workIntroState.cards = [...document.querySelectorAll('.work-card')].map((card, index) => {
+      const width = card.offsetWidth;
+      return { card, width, index, visible: null,
+        start: index * staggerDistance, end: index * staggerDistance + travelDistance,
+        inverseTravel: 1 / travelDistance,
+        extent: 56 + width / Math.max(state.width, 1) * 50,
+        minimumGap: Math.max(24, width / Math.max(state.width, 1) * 60),
+        y: index % 2 ? rowOffset : -rowOffset,
+        verticalProgress: index % 2 ? 1 : -1 };
+    });
     workIntroState.coverScale = Math.max((stage?.clientWidth || state.width) * 1.04 / width, (stage?.clientHeight || state.height) * 1.04 / height);
     measureWorkAperture();
   }
@@ -2587,10 +2654,8 @@ if (gl_FragColor.a < .01) discard;
       const typeSize = updateWorkTypeMetrics(workScale, 1);
       outer.style.transform = 'translate3d(-50%,-50%,0)';
       inner.style.transform = 'translate3d(-50%,-50%,0)';
-      dotField.style.transform = `translate3d(-50%,-50%,0) scale(${(1 / sceneScale).toFixed(4)})`;
-      dotField.style.setProperty('--dot-radius', '1px');
-      dotField.style.setProperty('--dot-spacing', `${(12 * (1 + (sceneScale - 1) * .2)).toFixed(3)}px`);
-      dotField.style.backgroundPosition = 'center center';
+      const dotGrowth = 1 + (sceneScale - 1) * .2;
+      dotField.style.transform = `translate3d(calc(-50% - ${((loopDistance * .25) / sceneScale).toFixed(3)}px),-50%,0) scale(${(dotGrowth / sceneScale).toFixed(4)})`;
       title.style.opacity = '1';
       scene.style.transform = `scale(${sceneScale})`;
       updateWorkTypeOffset(0);
@@ -2611,18 +2676,15 @@ if (gl_FragColor.a < .01) discard;
     const typeSize = updateWorkTypeMetrics(workScale, easedExpansion);
     inner.style.transform = `translate3d(-50%,calc(-50% + ${innerShift}px),0)`;
     const dotGrowth = 1 + (sceneScale - 1) * .2;
-    // Counter-scale the texture layer so the scene zoom does not shrink
-    // points into sub-pixels. Only the spacing grows (20% of scene zoom),
-    // while each point remains a stable 1px mark in the final image.
-    const dotScale = 1 / sceneScale;
-    const dotSpacing = 12 * dotGrowth;
-    const expandedDotSpacing = 12 * (1 + (workIntroState.coverScale - 1) * .2);
-    const expandedDotOffset = loopDistance * .25 % expandedDotSpacing;
-    const dotOffset = expandedDotOffset * dotSpacing / expandedDotSpacing;
-    dotField.style.setProperty('--dot-radius', '1px');
-    dotField.style.setProperty('--dot-spacing', `${dotSpacing.toFixed(3)}px`);
-    dotField.style.backgroundPosition = `calc(50% - ${dotOffset.toFixed(3)}px) center`;
-    dotField.style.transform = `translate3d(-50%,-50%,0) scale(${dotScale.toFixed(4)})`;
+    // The dots live in a pre-baked SVG pattern. Counter-scale the SVG while
+    // the scene zooms so the browser only composites the layer instead of
+    // rebuilding a full-viewport CSS gradient on every scroll frame.
+    const dotScale = dotGrowth / sceneScale;
+    // The SVG is intentionally wider than the viewport. Moving the whole
+    // layer gives the expanded scene a scrolling texture without changing
+    // individual dots or the pattern definition during scroll.
+    const dotTravel = loopDistance * .25 / sceneScale;
+    dotField.style.transform = `translate3d(calc(-50% - ${dotTravel.toFixed(3)}px),-50%,0) scale(${dotScale.toFixed(4)})`;
     title.style.opacity = '1';
     scene.style.transform = `scale(${sceneScale})`;
     updateWorkTypeOffset(titleOuterShift);
@@ -2675,32 +2737,27 @@ if (gl_FragColor.a < .01) discard;
     const exitDistance = Math.max(0, postDistance - workTimelineState.total);
     const exitProgress = clamp(exitDistance / Math.max(state.height, 1));
     updateWorkIntro(entryProgress, visualExpansionProgress, postDistance, loopDistance, collapseProgress, exitProgress);
-    const cardTravelDistance = Math.max(state.height * workCardTravelScreens, 1);
-    const cardStaggerDistance = state.height * workCardStaggerScreens;
-    const rowOffset = state.width <= 900 ? 14 : 21;
-    const cardStates = workIntroState.cards.map(({ card, width }, index) => {
-      const local = (mediaDistance - index * cardStaggerDistance) / cardTravelDistance;
-      const visible = mediaDistance > 0 && local >= 0 && local < 1;
-      const progress = clamp(local);
+    const visibleStates = workIntroState.visibleCards;
+    visibleStates.length = 0;
+    for (const item of workIntroState.cards) {
+      const visible = mediaDistance > 0 && mediaDistance >= item.start && mediaDistance < item.end;
+      if (visible !== item.visible) {
+        item.card.style.opacity = visible ? '1' : '0';
+        item.card.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        item.visible = visible;
+      }
+      if (!visible) continue;
+      const progress = clamp((mediaDistance - item.start) * item.inverseTravel);
       const travel = getWorkCardTravelProgress(progress);
       const reveal = getWorkCardReveal(progress);
-      const extent = 56 + width / Math.max(state.width, 1) * 50;
-      return {
-        card,
-        width,
-        index,
-        visible,
-        reveal,
-        extent,
-        x: extent * (1 - travel * 2),
-        y: index % 2 ? rowOffset : -rowOffset,
-        scale: .9 + reveal * .1
-      };
-    });
-    const visibleStates = cardStates.filter(cardState => cardState.visible);
+      item.reveal = reveal;
+      item.x = item.extent * (1 - travel * 2);
+      item.scale = .9 + reveal * .1;
+      visibleStates.push(item);
+    }
     if (visibleStates.length === 2) {
       const [older, newer] = visibleStates;
-      const minimumGap = Math.max(24, Math.max(older.width, newer.width) / Math.max(state.width, 1) * 60);
+      const minimumGap = Math.max(older.minimumGap, newer.minimumGap);
       const gap = newer.x - older.x;
       if (gap < minimumGap) {
         const correction = (minimumGap - gap) / 2;
@@ -2708,16 +2765,13 @@ if (gl_FragColor.a < .01) discard;
         newer.x += correction;
       }
     }
-    cardStates.forEach(({ card, index, visible, reveal, extent, x, y, scale }) => {
+    visibleStates.forEach(({ card, reveal, extent, x, y, scale, verticalProgress }) => {
       const horizontalProgress = clamp(x / Math.max(extent, 1), -1, 1);
-      const verticalProgress = clamp(y / Math.max(rowOffset, 1), -1, 1);
       const perspectiveStrength = horizontalProgress * horizontalProgress;
       const perspectiveRotateX = verticalProgress * perspectiveStrength * workCardPerspectiveDegrees;
       const perspectiveRotateY = -horizontalProgress * workCardPerspectiveDegrees;
-      card.style.opacity = visible ? '1' : '0';
       card.style.zIndex = String(20 + Math.round(reveal * 50));
       card.style.transform = `translate3d(calc(-50% + ${x}vw),calc(-50% + ${y}vh),0) rotateY(${perspectiveRotateY}deg) rotateX(${perspectiveRotateX}deg) scale(${scale})`;
-      card.setAttribute('aria-hidden', visible ? 'false' : 'true');
     });
   }
 
@@ -3066,6 +3120,8 @@ if (gl_FragColor.a < .01) discard;
     const sectionTop = sectionRect.top + state.scrollY;
     const connectorMetrics = measureEducationConnectors(section, block, connectors, sectionTop);
     educationScrollState = {
+      block,
+      travelPerPixel: (endOffset - gap) / range,
       sectionTop,
       sectionHeight: section.offsetHeight,
       gap,
@@ -3082,7 +3138,7 @@ if (gl_FragColor.a < .01) discard;
     const metrics = educationScrollState;
     if (!metrics || !isScrollNear(metrics.sectionTop, metrics.sectionHeight)) return;
     const { gap, startScroll, endScroll, range, endOffset, connectorMetrics } = metrics;
-    const block = $('.education-content-block');
+    const block = metrics.block;
     if (!block) return;
     if (reducedMotion) {
       block.style.transform = `translate3d(-50%,${gap}px,0)`;
@@ -3090,11 +3146,10 @@ if (gl_FragColor.a < .01) discard;
     }
     // Keep the same 0.5x motion through the anchors, then continue the
     // slower drift so the frame can be collected by the lower strip.
-    const rawProgress = (state.scrollY - startScroll) / range;
-    const progress = clamp(rawProgress, -1, 1);
+    const travel = clamp(state.scrollY - startScroll, -range, range) * metrics.travelPerPixel;
     const parallaxSpeed = .5;
     const afterAnchor = Math.max(0, state.scrollY - endScroll) * parallaxSpeed;
-    const offset = gap + (endOffset - gap) * progress + afterAnchor;
+    const offset = gap + travel + afterAnchor;
     block.style.transform = `translate3d(-50%,${offset}px,0)`;
     // The connector geometry needs to converge on the moving block. Use the
     // measurements cached during resize so scrolling performs no layout read.
@@ -3141,6 +3196,41 @@ if (gl_FragColor.a < .01) discard;
       lastViewportTop: null,
       lastViewportBottom: null
     };
+    // Each endpoint is (x, fixedY + movingTop * factor). Cache the geometry
+    // once per measurement; scrolling only evaluates these affine coordinates.
+    const segments = [];
+    const add = (x1, y1, factor1, x2, y2, factor2) => segments.push(x1, y1, factor1, x2, y2, factor2);
+    const blockHeight = bottom - top;
+    add(0, 0, 0, width, 0, 0);
+    add(width, 0, 0, width, lowerTop, 0);
+    add(width, lowerTop, 0, 0, lowerTop, 0);
+    add(0, lowerTop, 0, 0, 0, 0);
+    for (let index = 0; index <= 4; index += 1) {
+      const ratio = index / 4;
+      const innerX = left + ratio * (right - left);
+      add(ratio * width, 0, 0, innerX, 0, 1);
+      add(ratio * width, lowerTop, 0, innerX, blockHeight, 1);
+    }
+    for (let index = 1; index < 10; index += 1) {
+      const ratio = index / 10;
+      add(0, ratio * lowerTop, 0, left, ratio * blockHeight, 1);
+      add(width, ratio * lowerTop, 0, right, ratio * blockHeight, 1);
+    }
+    for (let index = 1; index < 4; index += 1) {
+      const ratio = index / 4;
+      const x1 = ratio * left;
+      const x2 = width - ratio * (width - right);
+      const lowerY = lowerTop + ratio * (blockHeight - lowerTop);
+      add(x1, 0, ratio, x2, 0, ratio);
+      add(x1, lowerY, ratio, x2, lowerY, ratio);
+      add(x1, 0, ratio, x1, lowerY, ratio);
+      add(x2, 0, ratio, x2, lowerY, ratio);
+    }
+    add(0, 0, 0, left, 0, 1);
+    add(width, 0, 0, right, 0, 1);
+    add(lowerLeft, lowerTop, 0, left, blockHeight, 1);
+    add(lowerRight, lowerTop, 0, right, blockHeight, 1);
+    connectorMetrics.segments = new Float64Array(segments);
     return connectorMetrics;
   }
 
@@ -3164,9 +3254,8 @@ if (gl_FragColor.a < .01) discard;
     metrics.lastTop = top;
     metrics.lastViewportTop = viewport.top;
     metrics.lastViewportBottom = viewport.bottom;
-    const { context, width, height, stroke, left, right, blockHeight, lowerLeft, lowerRight, lowerTop } = metrics;
+    const { context, width, stroke, segments } = metrics;
     if (!context) return;
-    const bottom = top + blockHeight;
     context.save();
     context.beginPath();
     context.rect(0, viewport.top, width, viewport.bottom - viewport.top);
@@ -3175,55 +3264,10 @@ if (gl_FragColor.a < .01) discard;
     context.strokeStyle = stroke;
     context.lineWidth = 1;
     context.beginPath();
-    context.moveTo(0, 0);
-    context.lineTo(width, 0);
-    context.lineTo(width, lowerTop);
-    context.lineTo(0, lowerTop);
-    context.closePath();
-    // Keep the top and bottom perspective fans intentionally sparse: five
-    // converging lines per edge (including both outer boundaries).
-    const columns = 4;
-    const rows = 10;
-    for (let index = 0; index <= columns; index += 1) {
-      const ratio = index / columns;
-      const outerX = ratio * width;
-      const innerX = left + ratio * (right - left);
-      context.moveTo(outerX, 0); context.lineTo(innerX, top);
-      context.moveTo(outerX, lowerTop); context.lineTo(innerX, bottom);
+    for (let index = 0; index < segments.length; index += 6) {
+      context.moveTo(segments[index], segments[index + 1] + top * segments[index + 2]);
+      context.lineTo(segments[index + 3], segments[index + 4] + top * segments[index + 5]);
     }
-    for (let index = 1; index < rows; index += 1) {
-      const ratio = index / rows;
-      const outerY = ratio * lowerTop;
-      const innerY = top + ratio * (bottom - top);
-      context.moveTo(0, outerY); context.lineTo(left, innerY);
-      context.moveTo(width, outerY); context.lineTo(right, innerY);
-    }
-    const crossRows = 4;
-    for (let index = 1; index < crossRows; index += 1) {
-      const ratio = index / crossRows;
-      const topY = ratio * top;
-      const topLeft = ratio * left;
-      const topRight = width - ratio * (width - right);
-      context.moveTo(topLeft, topY); context.lineTo(topRight, topY);
-      const bottomY = lowerTop + ratio * (bottom - lowerTop);
-      const bottomLeft = ratio * left;
-      const bottomRight = width - ratio * (width - right);
-      context.moveTo(bottomLeft, bottomY); context.lineTo(bottomRight, bottomY);
-    }
-    const sideRows = 4;
-    for (let index = 1; index < sideRows; index += 1) {
-      const ratio = index / sideRows;
-      const sideYTop = ratio * top;
-      const sideYBottom = lowerTop + ratio * (bottom - lowerTop);
-      const leftX = ratio * left;
-      const rightX = width - ratio * (width - right);
-      context.moveTo(leftX, sideYTop); context.lineTo(leftX, sideYBottom);
-      context.moveTo(rightX, sideYTop); context.lineTo(rightX, sideYBottom);
-    }
-    context.moveTo(0, 0); context.lineTo(left, top);
-    context.moveTo(width, 0); context.lineTo(right, top);
-    context.moveTo(lowerLeft, lowerTop); context.lineTo(left, bottom);
-    context.moveTo(lowerRight, lowerTop); context.lineTo(right, bottom);
     context.stroke();
     context.restore();
   }
@@ -3439,7 +3483,7 @@ if (gl_FragColor.a < .01) discard;
       const shellObserver = new ResizeObserver(scheduleResize);
       shellObserver.observe($('.site-shell'));
     }
-    if (document.fonts?.ready) document.fonts.ready.then(resize);
+    heroDisplayFontReady.then(() => { fitHeroTitle(true); resize(); });
     const themeColor = $('.theme-color');
     const themePolarity = $('.theme-polarity');
     applyPaperTheme(0);

@@ -147,7 +147,15 @@
             </svg>
             <div class="work-capsule work-capsule--outer">
               <div class="work-capsule work-capsule--inner">
-                <div class="work-dot-field" aria-hidden="true"></div>
+                <svg class="work-dot-field" aria-hidden="true" focusable="false">
+                  <defs>
+                    <pattern id="work-dot-pattern" width="12" height="12" patternUnits="userSpaceOnUse">
+                      <circle cx="1" cy="1" r="1" class="work-dot-field-dot"></circle>
+                    </pattern>
+                  </defs>
+                  <rect width="100%" height="100%" class="work-dot-field-base"></rect>
+                  <rect width="100%" height="100%" fill="url(#work-dot-pattern)"></rect>
+                </svg>
               </div>
             </div>
           </div>
