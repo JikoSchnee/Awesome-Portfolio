@@ -282,3 +282,11 @@ body.memory-is-grabbing,body.memory-is-grabbing *{cursor:grabbing!important;user
 }
 
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.main-nav a::before,.theme-color span,.theme-polarity span,.work-card,.memory,.work-capsule,.work-title,.work-zoom-scene,.work-spread,.contact-hit *,.my-way-smiley,.education-school-cover-part,.education-recover-button,.education-recover-button::before{transition:none!important;animation:none!important}}
+
+/* Keep tuning panels available in the markup, but out of the shipped UI. */
+.hero-wave-control,
+.education-burst-control,
+.education-logo-crop,
+.my-way-stretch-control,
+.contact-size-control,
+.contact-wave-control{display:none!important}
