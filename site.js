@@ -232,8 +232,8 @@
         p.cursor.vx += (0 - p.cursor.x) * .005; p.cursor.vy += (0 - p.cursor.y) * .005; p.cursor.vx *= .925; p.cursor.vy *= .925; p.cursor.x += p.cursor.vx * 2; p.cursor.y += p.cursor.vy * 2; p.cursor.x = Math.min(100, Math.max(-100, p.cursor.x)); p.cursor.y = Math.min(100, Math.max(-100, p.cursor.y));
       }));
     }
-    drawLines() {
-      const { context, bounding, stroke } = this;
+    drawLines(context = this.context, stroke = this.stroke, syncCopies = true) {
+      const { bounding } = this;
       context.clearRect(0, 0, bounding.width, bounding.height);
       context.strokeStyle = stroke;
       context.lineWidth = 1;
@@ -252,6 +252,11 @@
         });
       });
       context.stroke();
+      if (syncCopies) this.themeCopies?.forEach(target => {
+        this.drawLines(target.context, target.stroke, false);
+        target.element.style.setProperty('--x', `${this.mouse.sx}px`);
+        target.element.style.setProperty('--y', `${this.mouse.sy}px`);
+      });
     }
     tick(time) {
       this.frame = 0;
@@ -3334,6 +3339,7 @@ if (gl_FragColor.a < .01) discard;
   function clearThemeTransitionLayer(record) {
     if (!record || !themeTransitionLayers.has(record)) return;
     themeTransitionLayers.delete(record);
+    record.waveCopies?.forEach(({ source, target }) => source.themeCopies.delete(target));
     record.layer.remove();
   }
 
@@ -3358,6 +3364,11 @@ if (gl_FragColor.a < .01) discard;
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.content = themeSurface;
     paperBaseLayer.style.backgroundColor = theme.paper;
+    document.querySelectorAll('.site-shell:not(.theme-transition-copy) a-waves').forEach(wave => {
+      if (!wave.context) return;
+      wave.updateStroke();
+      wave.drawLines();
+    });
     refreshEducationConnectorTheme();
     refreshMemoryTheme();
   }
@@ -3448,7 +3459,24 @@ if (gl_FragColor.a < .01) discard;
     const memorySource = $('.memory-canvas');
     const memorySnapshot = createCanvasSnapshot(memorySource);
     if (memorySnapshot) layer.append(memorySnapshot);
-    const record = { layer, copy, memorySource, memorySnapshot, serial, requestSerial, theme };
+    const waveCopies = [];
+    const sourceWaves = [...shell.querySelectorAll('a-waves')];
+    copy.querySelectorAll('a-waves').forEach((element, index) => {
+      const source = sourceWaves[index];
+      const canvas = element.querySelector('canvas');
+      if (!source?.context || !canvas) return;
+      canvas.width = source.canvas.width;
+      canvas.height = source.canvas.height;
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      context.setTransform(source.pixelRatio, 0, 0, source.pixelRatio, 0, 0);
+      const target = { element, context, stroke: theme.ink };
+      source.themeCopies ||= new Set();
+      source.themeCopies.add(target);
+      source.drawLines(context, theme.ink, false);
+      waveCopies.push({ source, target });
+    });
+    const record = { layer, copy, memorySource, memorySnapshot, waveCopies, serial, requestSerial, theme };
     layer.style.zIndex = String(220 + record.serial);
     themeTransitionLayers.add(record);
     document.body.append(layer);
