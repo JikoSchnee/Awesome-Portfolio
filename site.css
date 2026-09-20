@@ -74,7 +74,7 @@ a-waves canvas{display:block;width:100%;height:100%}
 .data-strip span::before{content:attr(data-binary)}
 .hero-content{display:grid;grid-template-rows:36px max-content 36px;align-content:start;min-height:0;position:relative;z-index:4}
 .hero-title{margin:0;display:flex;align-items:center;justify-content:center;gap:2.2vw;padding:0 1.25vw;border-bottom:var(--line) solid var(--ink);font:700 clamp(94px,12.2vw,184px)/.78 var(--display);letter-spacing:-.015em;text-transform:uppercase;white-space:nowrap;overflow:hidden}
-.hero-title .hero-word{display:inline-flex;transform:scale(1.26,1.09);will-change:transform}
+.hero-title .hero-word{display:inline-flex;flex:none;transform:scale(1.26,1.09);will-change:transform}
 .hero-title .hero-word:first-child{transform-origin:left center}.hero-title .hero-word:last-of-type{transform-origin:right center}
 .hero-title .hero-letter-cell{--letter-gap:5px;display:inline-block;position:relative;flex:0 0 auto;width:max-content;height:0.8em;line-height:1;overflow:hidden;contain:paint;clip-path:inset(0);-webkit-clip-path:inset(0);vertical-align:top}
 .hero-title .hero-letter-sizer{display:block;visibility:hidden;line-height:1;white-space:nowrap}

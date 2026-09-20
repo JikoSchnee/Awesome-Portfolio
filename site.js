@@ -367,10 +367,9 @@
     const nextDelay = () => 6000 + random() * 9000;
     const measureDistance = state => {
       state.cell.style.width = '';
-      const width = state.sizer.offsetWidth;
-      const height = state.cell.offsetHeight;
+      const width = parseFloat(getComputedStyle(state.sizer).width);
+      const height = parseFloat(getComputedStyle(state.cell).height);
       const gap = parseFloat(getComputedStyle(state.cell).getPropertyValue('--letter-gap')) || 5;
-      state.cell.style.width = `${width}px`;
       state.cell.style.setProperty('--letter-width', `${width}px`);
       state.cell.style.setProperty('--letter-height', `${height}px`);
       state.distance = (state.direction[0] ? width : height) + gap;
@@ -2398,18 +2397,18 @@ if (gl_FragColor.a < .01) discard;
     if (!title) return;
     const fitKey = `${Math.round(title.clientWidth)}:${Math.round(title.clientHeight)}`;
     if (!force && title.dataset.fitKey === fitKey) return;
-    title.dataset.fitKey = fitKey;
     title.style.fontSize = '';
     title.style.gap = '0px';
     const words = [...title.querySelectorAll('.hero-word')];
     const star = title.querySelector('.hero-star');
     if (words.length !== 2 || !star) return;
+    // Always measure natural glyph widths, never widths frozen before a font swap.
+    title.querySelectorAll('.hero-letter-cell').forEach(cell => { cell.style.width = ''; });
     star.style.transform = '';
     const baseSize = parseFloat(getComputedStyle(title).fontSize);
-    const wordScaleX = 1.26;
-    const wordWidth = words.reduce((sum, word) => sum + word.offsetWidth * wordScaleX, 0);
+    const wordWidth = words.reduce((sum, word) => sum + word.getBoundingClientRect().width, 0);
     const referenceLetters = [...words[0].querySelectorAll('.hero-letter-cell')].slice(0, 2);
-    const twoLetterWidth = referenceLetters.reduce((sum, letter) => sum + letter.offsetWidth * wordScaleX, 0);
+    const twoLetterWidth = referenceLetters.reduce((sum, letter) => sum + letter.getBoundingClientRect().width, 0);
     const starWidth = star.offsetWidth;
     const styles = getComputedStyle(title);
     const padding = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
@@ -2422,6 +2421,7 @@ if (gl_FragColor.a < .01) discard;
     const targetCenter = (firstEnd + secondStart) / 2;
     const starCenter = star.offsetLeft + star.offsetWidth / 2;
     star.style.transform = `translateX(${targetCenter - starCenter}px)`;
+    title.dataset.fitKey = `${Math.round(title.clientWidth)}:${Math.round(title.clientHeight)}`;
   }
 
   function resize() {
