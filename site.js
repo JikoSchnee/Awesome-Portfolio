@@ -306,6 +306,8 @@
   customElements.define('data-strip', DataStrip);
 
   const workItems = [
+    { file: 'Delta-Harmonica-Macro.mp4', title: 'Delta Harmonica Macro', href: 'https://jiko-official.top/delta/', video: './assets/work/delta-harmonica-macro.mp4', poster: './assets/work/delta-harmonica-macro-poster.jpg', aspectRatio: '1280 / 598' },
+    { file: 'Nature.mp4', title: 'Nature', href: 'https://jikoschnee.github.io/design-gallery/nature/', video: './assets/work/nature.mp4', poster: './assets/work/nature-poster.jpg', aspectRatio: '1280 / 598' },
     ['Generous-Slider.DCY9Q-MO.mp4', 'https://generousbranding.com/'],
     ['Hf-Navigation.Gkvt7Etn.mp4', '#'],
     ['Generous-Transition.Dysz98iA.mp4', 'https://generousbranding.com/'],
@@ -557,11 +559,103 @@
   function buildWork() {
     const host = $('#work-media');
     if (!host) return;
-    workItems.forEach(([file, href], index) => {
+    const reducedMotionPreference = matchMedia('(prefers-reduced-motion: reduce)');
+    const hoverPlaybackPreference = matchMedia('(hover: hover) and (pointer: fine)');
+    const syncVideoPlayback = card => {
+      const video = card.querySelector('video');
+      if (!video) return;
+      const isActive = card.dataset.workActive === 'true';
+      const requiresHover = hoverPlaybackPreference.matches;
+      const isHovered = card.dataset.workHovered === 'true' || card.dataset.workFocused === 'true';
+      const shouldPlay = isActive
+        && card.dataset.workInViewport === 'true'
+        && (!requiresHover || isHovered)
+        && !reducedMotionPreference.matches;
+      if (!shouldPlay) {
+        video.pause();
+        if (!isActive
+          || reducedMotionPreference.matches
+          || (requiresHover && !isHovered)) {
+          if (video.readyState >= HTMLMediaElement.HAVE_METADATA) video.currentTime = 0;
+        }
+        return;
+      }
+      if (video.paused) video.play()?.catch(() => {});
+    };
+    const videoVisibilityObserver = 'IntersectionObserver' in window
+      ? new IntersectionObserver(entries => entries.forEach(entry => {
+        entry.target.dataset.workInViewport = String(entry.isIntersecting);
+        syncVideoPlayback(entry.target);
+      }), { threshold: 0.01 })
+      : null;
+    reducedMotionPreference.addEventListener('change', () => {
+      host.querySelectorAll('.work-card').forEach(syncVideoPlayback);
+    });
+    hoverPlaybackPreference.addEventListener('change', () => {
+      host.querySelectorAll('.work-card').forEach(syncVideoPlayback);
+    });
+
+    workItems.forEach((item, index) => {
+      const [file, href] = Array.isArray(item) ? item : [item.file, item.href];
+      const title = Array.isArray(item) ? file.split('.')[0] : item.title;
       const card = document.createElement('a');
       card.className = 'work-card'; card.href = href; card.target = href === '#' ? '_self' : '_blank'; card.rel = 'noreferrer';
       card.dataset.index = index; card.setAttribute('aria-hidden', 'true');
-      card.innerHTML = `<div class="work-card-screen" aria-hidden="true"></div><footer><span>${file.split('.')[0]}</span><span>${String(index + 1).padStart(2, '0')}—${String(9321 + index * 137).slice(-6)}</span></footer>`;
+      card.setAttribute('aria-label', `${title} — open project website`);
+      card.dataset.workActive = 'false';
+      card.dataset.workInViewport = String(!videoVisibilityObserver);
+      card.dataset.workHovered = 'false';
+      card.dataset.workFocused = 'false';
+      card.syncWorkVideoPlayback = () => syncVideoPlayback(card);
+      const screen = document.createElement('div');
+      screen.className = 'work-card-screen';
+      if (!Array.isArray(item) && item.aspectRatio) screen.style.aspectRatio = item.aspectRatio;
+      screen.setAttribute('aria-hidden', 'true');
+      if (!Array.isArray(item) && item.video) {
+        const video = document.createElement('video');
+        video.className = 'work-card-video';
+        video.src = item.video;
+        video.muted = true;
+        video.defaultMuted = true;
+        video.loop = true;
+        video.playsInline = true;
+        video.preload = 'metadata';
+        video.setAttribute('muted', '');
+        video.setAttribute('loop', '');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('aria-hidden', 'true');
+        if (item.poster) video.poster = item.poster;
+        screen.append(video);
+        card.addEventListener('pointerenter', event => {
+          if (!hoverPlaybackPreference.matches || !['mouse', 'pen'].includes(event.pointerType)) return;
+          card.dataset.workHovered = 'true';
+          if (video.readyState >= HTMLMediaElement.HAVE_METADATA) video.currentTime = 0;
+          syncVideoPlayback(card);
+        });
+        card.addEventListener('pointerleave', event => {
+          if (!hoverPlaybackPreference.matches || !['mouse', 'pen'].includes(event.pointerType)) return;
+          card.dataset.workHovered = 'false';
+          syncVideoPlayback(card);
+        });
+        card.addEventListener('focusin', () => {
+          card.dataset.workFocused = 'true';
+          if (hoverPlaybackPreference.matches && video.readyState >= HTMLMediaElement.HAVE_METADATA) video.currentTime = 0;
+          syncVideoPlayback(card);
+        });
+        card.addEventListener('focusout', event => {
+          if (card.contains(event.relatedTarget)) return;
+          card.dataset.workFocused = 'false';
+          syncVideoPlayback(card);
+        });
+      }
+      const footer = document.createElement('footer');
+      const name = document.createElement('span');
+      const code = document.createElement('span');
+      name.textContent = title;
+      code.textContent = `${String(index + 1).padStart(2, '0')}—${String(9321 + index * 137).slice(-6)}`;
+      footer.append(name, code);
+      card.append(screen, footer);
+      if (card.querySelector('video')) videoVisibilityObserver?.observe(card);
       host.append(card);
     });
   }
@@ -2789,6 +2883,8 @@ if (gl_FragColor.a < .01) discard;
       if (visible !== item.visible) {
         item.card.style.opacity = visible ? '1' : '0';
         item.card.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        item.card.dataset.workActive = String(visible);
+        item.card.syncWorkVideoPlayback?.();
         item.visible = visible;
       }
       if (!visible) continue;
@@ -2823,51 +2919,66 @@ if (gl_FragColor.a < .01) discard;
   function buildEducationSchoolReveals() {
     const section = $('.education');
     if (!section) return;
-    const cells = [...section.querySelectorAll('.education-school')];
-    if (!cells.length) return;
-    let observer;
+    const tiles = [...section.querySelectorAll('.reveal-tile')];
+    const schools = [...section.querySelectorAll('.education-school')];
+    const schoolCells = schools.flatMap(school => {
+      const covers = [...school.querySelectorAll('.education-school-cover-cell')];
+      const triggers = [...school.querySelectorAll('.education-school-trigger')];
+      return triggers.map((trigger, index) => ({ trigger, cover: covers[index] }));
+    });
+    const introLinks = [...section.querySelectorAll('.intro-copy a')];
+    introLinks.forEach(link => link.setAttribute('tabindex', '-1'));
+    const targets = new Map([
+      ...tiles.map(tile => [tile, { tile }]),
+      ...schoolCells.map(({ trigger, cover }) => [trigger, { trigger, cover }])
+    ]);
+    if (!targets.size) return;
 
-    const revealCell = cell => {
-      if (cell.classList.contains('is-revealed')) return;
-      const triggers = [...cell.querySelectorAll('.education-school-trigger')];
-      const cover = $('.education-school-cover', cell);
-      const unlock = () => {
-        cell.classList.add('is-interactive');
-        triggers.forEach(trigger => trigger.removeAttribute('tabindex'));
-      };
-
-      cell.classList.add('is-revealed');
-      if (reducedMotion || !cover) {
-        unlock();
-        return;
+    const reveal = target => {
+      const item = targets.get(target);
+      if (!item) return;
+      if (item.tile) {
+        item.tile.classList.add('is-revealed');
+        if (item.tile.closest('.impact-row')) item.tile.setAttribute('tabindex', '0');
+        if (item.tile.classList.contains('intro-copy')) introLinks.forEach(link => link.removeAttribute('tabindex'));
+      } else if (item.cover) {
+        item.cover.classList.add('is-revealed');
+        const unlock = () => {
+          item.cover.classList.add('is-interactive');
+          item.trigger.removeAttribute('tabindex');
+        };
+        const part = $('.education-school-cover-part', item.cover);
+        if (reducedMotion || !part) unlock();
+        else part.addEventListener('transitionend', event => {
+          if (event.propertyName === 'transform' && item.cover.classList.contains('is-revealed')) unlock();
+        }, { once: true });
       }
-      cover.addEventListener('transitionend', event => {
-        if (event.propertyName === 'transform' && cell.classList.contains('is-revealed')) unlock();
-      }, { once: true });
     };
 
-    observer = new IntersectionObserver(entries => {
+    const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
         if (entry.target.dataset.educationRevealNeedsExit === 'true') {
-          if (!entry.isIntersecting || entry.intersectionRatio < .5) entry.target.dataset.educationRevealNeedsExit = 'false';
+          if (!entry.isIntersecting || entry.intersectionRatio < .2) entry.target.dataset.educationRevealNeedsExit = 'false';
           return;
         }
-        if (!entry.isIntersecting || entry.intersectionRatio < .5) return;
-        revealCell(entry.target);
+        if (!entry.isIntersecting || entry.intersectionRatio < .2) return;
+        reveal(entry.target);
         observer.unobserve(entry.target);
       });
-    }, { threshold: [.5] });
+    }, { threshold: [.2] });
 
-    cells.forEach(cell => observer.observe(cell));
+    targets.forEach((_, target) => observer.observe(target));
 
     $('#education-recover', section)?.addEventListener('click', () => {
-      cells.forEach(cell => {
-        const triggers = cell.querySelectorAll('.education-school-trigger');
-        cell.classList.remove('is-interactive', 'is-revealed');
-        cell.dataset.educationRevealNeedsExit = 'true';
-        triggers.forEach(trigger => trigger.setAttribute('tabindex', '-1'));
-        observer.observe(cell);
+      targets.forEach((item, target) => {
+        item.tile?.classList.remove('is-revealed');
+        if (item.tile?.closest('.impact-row')) item.tile.setAttribute('tabindex', '-1');
+        item.cover?.classList.remove('is-interactive', 'is-revealed');
+        item.trigger?.setAttribute('tabindex', '-1');
+        target.dataset.educationRevealNeedsExit = 'true';
+        observer.observe(target);
       });
+      introLinks.forEach(link => link.setAttribute('tabindex', '-1'));
     });
   }
 
@@ -2948,6 +3059,64 @@ if (gl_FragColor.a < .01) discard;
         if (event.detail === 0 || matchMedia('(pointer:coarse)').matches) triggerEducationBurst(trigger);
       });
     });
+    section.querySelectorAll('.impact-row strong, .impact-row span').forEach(trigger => {
+      trigger.setAttribute('tabindex', trigger.classList.contains('is-revealed') ? '0' : '-1');
+      trigger.setAttribute('role', 'button');
+      trigger.setAttribute('aria-label', `${trigger.firstChild?.textContent?.trim()}, launch ${trigger.matches('strong') ? 'numbers' : 'JIKO logos'}`);
+      const launch = () => {
+        if (!trigger.classList.contains('is-revealed')) return;
+        triggerImpactBurst(trigger);
+      };
+      trigger.addEventListener('pointerenter', event => {
+        if (event.pointerType !== 'touch' && hasFinePointer()) launch();
+      });
+      trigger.addEventListener('focus', launch);
+      trigger.addEventListener('click', event => {
+        if (event.detail === 0 || matchMedia('(pointer:coarse)').matches) launch();
+      });
+      trigger.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        launch();
+      });
+    });
+  }
+
+  function triggerImpactBurst(trigger) {
+    const layer = educationBurstState.layer;
+    if (!layer || reducedMotion) return;
+    const now = performance.now();
+    if (now - Number(trigger.dataset.impactBurstAt || 0) < 180) return;
+    trigger.dataset.impactBurstAt = String(now);
+    const rect = trigger.getBoundingClientRect();
+    const centerX = rect.left + rect.width * .5;
+    const centerY = rect.top + rect.height * .5;
+    const isNumber = trigger.matches('strong');
+    const label = trigger.firstChild?.textContent?.trim();
+    const particleCount = educationBurstMinimumCount + Math.floor(Math.random() * (educationBurstMaximumCount - educationBurstMinimumCount + 1));
+    for (let index = 0; index < particleCount; index += 1) {
+      const variant = createEducationBurstVariant();
+      const element = document.createElement('span');
+      element.className = `education-logo-burst ${isNumber ? 'impact-number-burst' : 'impact-logo-burst'}`;
+      const height = Math.round(variant.size * .72);
+      const width = isNumber ? Math.round(height * Math.max(1.7, (label?.length || 3) * .55)) : variant.size;
+      element.style.width = `${width}px`;
+      element.style.height = `${isNumber ? height : variant.size}px`;
+      if (isNumber) {
+        element.textContent = label;
+        element.style.setProperty('--rank-burst-size', `${height}px`);
+      }
+      layer.append(element);
+      educationBurstState.particles.push({
+        element, x: centerX + variant.offsetX, y: centerY + variant.offsetY,
+        velocityX: variant.velocityX, velocityY: variant.velocityY, gravity: variant.gravity,
+        rotation: variant.rotation, spin: variant.spin, width, height: isNumber ? height : variant.size
+      });
+    }
+    if (!educationBurstState.frame) {
+      educationBurstState.lastFrameAt = now;
+      educationBurstState.frame = requestAnimationFrame(animateEducationLogoBursts);
+    }
   }
 
   function setEducationBurstSpread(value, output) {
@@ -3144,12 +3313,15 @@ if (gl_FragColor.a < .01) discard;
     const gap = parseFloat(getComputedStyle(section).getPropertyValue('--education-block-gap')) || 64;
     const upperHeight = upperStrip.offsetHeight;
     const lowerHeight = lowerStrip.offsetHeight;
+    const impactHeight = $('.impact-panel', block)?.offsetHeight || 0;
     const border = section.clientTop || 0;
     const sectionHeight = Math.max(
       block.offsetHeight + gap * 2 + lowerHeight + border,
-      block.offsetHeight * 2 + gap * 4 + upperHeight + lowerHeight * 2 + border * 2 - state.height
+      block.offsetHeight * 2 + impactHeight + gap * 4 + upperHeight + lowerHeight * 2 + border * 2 - state.height
     );
     if (Math.abs(section.offsetHeight - sectionHeight) > 0.5) section.style.height = `${sectionHeight}px`;
+    // Changing this section's height can move a restored scroll position via scroll anchoring.
+    state.scrollY = scrollY;
     const sectionRect = section.getBoundingClientRect();
     const upperRect = upperStrip.getBoundingClientRect();
     const lowerRect = lowerStrip.getBoundingClientRect();
@@ -3161,9 +3333,8 @@ if (gl_FragColor.a < .01) discard;
     const endScroll = startScroll + middleDistance + upperRect.height + lowerRect.height - state.height;
     const range = Math.max(endScroll - startScroll, 1);
     const endOffset = Math.max(gap, lowerTop - block.offsetHeight - gap);
-    block.style.transform = `translate3d(-50%,${gap}px,0)`;
     const sectionTop = sectionRect.top + state.scrollY;
-    const connectorMetrics = measureEducationConnectors(section, block, connectors, sectionTop);
+    const connectorMetrics = measureEducationConnectors(section, block, connectors, sectionTop, gap);
     educationScrollState = {
       block,
       travelPerPixel: (endOffset - gap) / range,
@@ -3201,15 +3372,15 @@ if (gl_FragColor.a < .01) discard;
     renderEducationConnectors(connectorMetrics, connectorMetrics?.blockTop + offset - gap);
   }
 
-  function measureEducationConnectors(section, block, canvas, sectionTop) {
+  function measureEducationConnectors(section, block, canvas, sectionTop, blockStartTop) {
     const context = canvas?.getContext('2d', { alpha: true, desynchronized: true });
     if (!context) return;
     const sectionRect = section.getBoundingClientRect();
     const blockRect = block.getBoundingClientRect();
     const left = blockRect.left - sectionRect.left;
     const right = blockRect.right - sectionRect.left;
-    const top = blockRect.top - sectionRect.top;
-    const bottom = blockRect.bottom - sectionRect.top;
+    const top = blockStartTop;
+    const bottom = top + block.offsetHeight;
     const width = section.clientWidth;
     const lowerStrip = $('.education-strip', section);
     const lowerRect = lowerStrip ? lowerStrip.getBoundingClientRect() : sectionRect;
@@ -3357,12 +3528,24 @@ if (gl_FragColor.a < .01) discard;
     return `${theme.color}:${theme.darkBackground ? 'dark' : 'color'}`;
   }
 
+  function updateFavicon(color) {
+    const favicon = $('#site-favicon');
+    const logo = $('.brand svg');
+    if (!favicon || !logo) return;
+    const svg = logo.cloneNode(true);
+    svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    svg.setAttribute('fill', color);
+    svg.removeAttribute('aria-hidden');
+    favicon.href = `data:image/svg+xml,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`;
+  }
+
   function applyLiveTheme(theme) {
     document.documentElement.style.setProperty('--theme', theme.color);
     document.documentElement.style.setProperty('--ink', theme.ink);
     document.documentElement.style.setProperty('--paper', theme.paper);
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.content = themeSurface;
+    updateFavicon(theme.color);
     paperBaseLayer.style.backgroundColor = theme.paper;
     document.querySelectorAll('.site-shell:not(.theme-transition-copy) a-waves').forEach(wave => {
       if (!wave.context) return;
@@ -3569,6 +3752,8 @@ if (gl_FragColor.a < .01) discard;
       new ResizeObserver(scheduleResize).observe(layoutViewportProbe);
     }
     heroDisplayFontReady.then(() => { fitHeroTitle(true); resize(); });
+    document.fonts?.ready.then(() => resize());
+    addEventListener('pageshow', () => requestAnimationFrame(() => resize()));
     const themeColor = $('.theme-color');
     const themePolarity = $('.theme-polarity');
     applyPaperTheme(0);
