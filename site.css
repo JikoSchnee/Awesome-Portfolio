@@ -36,7 +36,7 @@ button{color:inherit}
 .icon-link{border-right:var(--line) solid var(--ink)}
 .icon-link svg{width:21px;height:21px;fill:var(--ink)}
 .linkedin{font-family:Arial,sans-serif;font-size:17px;font-weight:700}
-.codepen{grid-column:4;grid-row:1;height:50%;align-self:start}.linkedin{grid-column:4;grid-row:1;height:50%;align-self:end;border-top:var(--line) solid var(--ink)}.contrast{grid-column:5;grid-row:1}.availability{grid-column:6;grid-row:1}
+.github{grid-column:4;grid-row:1;height:50%;align-self:start}.linkedin{grid-column:4;grid-row:1;height:50%;align-self:end;border-top:var(--line) solid var(--ink)}.contrast{grid-column:5;grid-row:1}.availability{grid-column:6;grid-row:1}
 .contrast{display:grid;grid-template-rows:1fr 1fr;border-right:var(--line) solid var(--ink)}
 .theme-polarity{border-top:var(--line) solid var(--ink)}
 .theme-color span{width:18px;height:18px;border:2px solid var(--ink);border-radius:50%;background:linear-gradient(90deg,var(--ink) 50%,var(--paper) 50%);transition:transform .45s ease}
@@ -275,7 +275,7 @@ body.memory-is-grabbing,body.memory-is-grabbing *{cursor:grabbing!important;user
   .availability p.availability-origin{display:none}
   .availability p{justify-content:center;padding:0 12px}
   .availability p+ p{border-top:0}
-  .codepen{grid-column:4;grid-row:1;height:auto;align-self:stretch}
+  .github{grid-column:4;grid-row:1;height:auto;align-self:stretch}
   .linkedin{grid-column:4;grid-row:2;height:auto;align-self:stretch;border-top:var(--line) solid var(--ink)}
   .contrast{grid-column:5;grid-row:1 / 3}
 }
