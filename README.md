@@ -15,6 +15,7 @@ Screenshot of this project's homepage. Motion and interactive effects are availa
 ## Featured work
 
 - Delta Harmonica Macro — product ownership, development, community, and growth.
+- [Atlas Design](https://jikoschnee.github.io/Atlas-Design/color-study.html) — WebGL core, chromatic study, and luminous interface components; second in the WORK sequence.
 - Class Echo — live classroom interpretation for international students.
 
 ## Local preview

@@ -307,6 +307,7 @@
 
   const workItems = [
     { file: 'Delta-Harmonica-Macro.mp4', title: 'Delta Harmonica Macro', href: 'https://jiko-official.top/delta/', video: './assets/work/delta-harmonica-macro.mp4', poster: './assets/work/delta-harmonica-macro-poster.jpg', aspectRatio: '1280 / 598' },
+    { file: 'Atlas-Design', title: 'Atlas Design', href: 'https://jikoschnee.github.io/Atlas-Design/color-study.html', image: './assets/work/atlas-design.png', aspectRatio: '1280 / 720' },
     { file: 'Nature.mp4', title: 'Nature', href: 'https://jikoschnee.github.io/design-gallery/nature/', video: './assets/work/nature.mp4', poster: './assets/work/nature-poster.jpg', aspectRatio: '1280 / 598' },
     ['Generous-Slider.DCY9Q-MO.mp4', 'https://generousbranding.com/'],
     ['Hf-Navigation.Gkvt7Etn.mp4', '#'],
@@ -647,6 +648,14 @@
           card.dataset.workFocused = 'false';
           syncVideoPlayback(card);
         });
+      }
+      if (!Array.isArray(item) && item.image) {
+        const image = document.createElement('img');
+        image.className = 'work-card-image';
+        image.src = item.image;
+        image.alt = '';
+        image.loading = 'lazy';
+        screen.append(image);
       }
       const footer = document.createElement('footer');
       const name = document.createElement('span');
